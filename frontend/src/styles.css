@@ -4174,3 +4174,8 @@ td small {
   .study-message { max-width:96%; }
   .study-composer { position:sticky; bottom:76px; background:#15151f; }
 }
+.study-choice-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; width:100%; }
+.study-choice-options button { min-height:48px; padding:12px 14px; color:#e6e2f2; text-align:left; background:#191923; border:1px solid #373646; border-radius:11px; cursor:pointer; }
+.study-choice-options button:hover, .study-choice-options button.selected { color:#efe7ff; background:#302640; border-color:#b08cff; }
+.study-choice-options button:disabled { cursor:default; opacity:.8; }
+@media (max-width:650px) { .study-choice-options { grid-template-columns:1fr; } }

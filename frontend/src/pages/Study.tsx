@@ -11,14 +11,33 @@ import { extractStudyFile } from "../lib/study-import";
 
 type ChatMessage = { role: "user" | "assistant"; text: string; hint?: string };
 type Flashcard = { id: string; front: string; back: string; topic: string; dueAt: number; interval: number; ease: number };
-type StudyQuestion = { format?: string; question: string; answer: string; explanation: string; topic: string; evidence: string };
+type StudyQuestion = { format?: string; question: string; options?: string[]; answer: string; explanation: string; topic: string; evidence: string };
 type Mastery = Record<string, { correct: number; total: number }>;
-type StudyData = { title: string; notes: string; messages: ChatMessage[]; cards: Flashcard[]; questions: StudyQuestion[]; questionHistory: StudyQuestion[]; mastery: Mastery };
-const empty: StudyData = { title: "", notes: "", messages: [], cards: [], questions: [], questionHistory: [], mastery: {} };
+type StudyData = { title: string; notes: string; messages: ChatMessage[]; cards: Flashcard[]; questions: StudyQuestion[]; questionHistory: StudyQuestion[]; noteChunkIndex: number; mastery: Mastery };
+const empty: StudyData = { title: "", notes: "", messages: [], cards: [], questions: [], questionHistory: [], noteChunkIndex: 0, mastery: {} };
 const storeKey = (userId: string) => `playbit-study-v2-${userId}`;
 const legacyStoreKey = (userId: string) => `playbit-study-v1-${userId}`;
 const clampText = (value: string) => value.slice(0, 120_000);
-const examFormatLabels: Record<string, string> = { definition: "DEFINITION", give_reason: "GIVE A REASON", explanation: "EXPLAIN", comparison: "DIFFERENTIATE / COMPARE", calculation: "CALCULATION", formula: "FORMULA", list: "LIST / STATE", short_answer: "SHORT ANSWER" };
+const examFormatLabels: Record<string, string> = { definition: "DEFINITION", give_reason: "GIVE A REASON", explanation: "EXPLAIN", comparison: "DIFFERENTIATE / COMPARE", calculation: "CALCULATION", formula: "FORMULA", list: "LIST / STATE", short_answer: "SHORT ANSWER", multiple_choice: "MULTIPLE CHOICE", true_false: "TRUE / FALSE", fill_blank: "FILL IN THE BLANK", case_study: "CASE STUDY", assertion_reason: "ASSERTION & REASON" };
+
+function splitStudyNotes(text: string, limit = 18_000) {
+  const units = text.match(/[^.!?\r\n]+[.!?]?|\r?\n+/g) ?? [text];
+  const chunks: string[] = [];
+  let current = "";
+  const push = () => { if (current.trim()) chunks.push(current.trim()); current = ""; };
+  for (const raw of units) {
+    const unit = raw.trim();
+    if (!unit) continue;
+    if (unit.length > limit) {
+      push();
+      for (let start = 0; start < unit.length; start += limit) chunks.push(unit.slice(start, start + limit).trim());
+    } else if (current.length + unit.length + 1 > limit) {
+      push(); current = unit;
+    } else current = current ? `${current} ${unit}` : unit;
+  }
+  push();
+  return chunks.length ? chunks : text.trim() ? [text.trim()] : [];
+}
 
 export default function Study() {
   const session = useSession((state) => state.session);
@@ -62,6 +81,7 @@ export default function Study() {
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [data.messages, tab]);
 
   const dueCards = useMemo(() => data.cards.filter((card) => card.dueAt <= Date.now()), [data.cards]);
+  const noteChunks = useMemo(() => splitStudyNotes(data.notes), [data.notes]);
   const topics = useMemo(() => Object.entries(data.mastery).sort((a, b) => {
     const scoreA = a[1].total ? a[1].correct / a[1].total : 0;
     const scoreB = b[1].total ? b[1].correct / b[1].total : 0;
@@ -76,7 +96,7 @@ export default function Study() {
       const extracted = await extractStudyFile(file);
       const text = clampText(extracted.replace(/\u0000/g, " ").trim());
       if (!text) throw new Error(`No selectable text was found in “${file.name}”. Scanned documents and images need OCR before upload.`);
-      setData((current) => ({ ...current, title: file.name, notes: text, messages: [], cards: [], questions: [], questionHistory: [], mastery: {} }));
+      setData((current) => ({ ...current, title: file.name, notes: text, messages: [], cards: [], questions: [], questionHistory: [], noteChunkIndex: 0, mastery: {} }));
       setChatError("");
     } catch (error) {
       setChatError(error instanceof Error ? error.message : `Could not read “${file.name}”. Try exporting it to a common document format.`);
@@ -100,16 +120,27 @@ export default function Study() {
   }
 
   async function generateQuestions() {
-    const generated = await api<{ questions: StudyQuestion[] }>("/study/questions", "POST", {
-      context: data.notes.slice(0, 24_000),
-      focusTopics: topics.slice(0, 3).map(([topic]) => topic),
-      recentQuestions: [
-        ...data.questionHistory.map(({ question, topic, evidence }) => ({ question, topic, evidence })),
-        ...data.cards.map((card) => ({ question: card.front, topic: card.topic, evidence: "" })),
-        ...data.questions.map(({ question, topic, evidence }) => ({ question, topic, evidence })),
-      ].slice(-40),
-    });
-    return generated.questions;
+    const chunks = noteChunks;
+    if (!chunks.length) throw new Error("Add study material before generating questions.");
+    const recentQuestions = [
+      ...data.questionHistory.map(({ question, topic, evidence }) => ({ question, topic, evidence: evidence.slice(0, 360) })),
+      ...data.cards.map((card) => ({ question: card.front, topic: card.topic, evidence: "" })),
+      ...data.questions.map(({ question, topic, evidence }) => ({ question, topic, evidence: evidence.slice(0, 360) })),
+    ].slice(-40);
+    for (let attempt = 0; attempt < chunks.length; attempt++) {
+      const index = (data.noteChunkIndex + attempt) % chunks.length;
+      const generated = await api<{ questions: StudyQuestion[] }>("/study/questions", "POST", {
+        context: chunks[index],
+        focusTopics: topics.slice(0, 3).map(([topic]) => topic),
+        recentQuestions,
+      });
+      if (generated.questions.length) {
+        setData((previous) => ({ ...previous, noteChunkIndex: (index + 1) % chunks.length }));
+        return generated.questions;
+      }
+    }
+    setData((previous) => ({ ...previous, noteChunkIndex: (previous.noteChunkIndex + 1) % chunks.length }));
+    throw new Error("You've practiced all the distinct questions supported by this upload. Add more notes to create new questions.");
   }
 
   async function nextQuiz() {
@@ -178,8 +209,8 @@ export default function Study() {
         <input ref={fileRef} hidden type="file" accept="*/*" onChange={(event) => { void importFile(event.target.files?.[0]); event.currentTarget.value = ""; }}/>
         <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload size={16}/> Upload notes</Button>
       </div>
-      <textarea aria-label="Paste notes or syllabus" value={data.notes} maxLength={120_000} onChange={(event) => { const notes = event.target.value; setData((current) => ({ ...current, title: current.title || "Pasted study notes", notes, cards: [], questions: [], questionHistory: [], mastery: {} })); setQuiz(null); }} placeholder="Or paste notes / a syllabus here… The tutor will use only this material to answer." />
-      <div className="study-source-foot"><span>{data.notes.length.toLocaleString()} / 120,000 characters · saved in this browser for your account</span>{data.notes && <button className="study-text-button" onClick={() => { setData((current) => ({ ...current, title: "", notes: "", cards: [], questions: [], questionHistory: [], mastery: {}, messages: [] })); setQuiz(null); }}>Clear material</button>}</div>
+      <textarea aria-label="Paste notes or syllabus" value={data.notes} maxLength={120_000} onChange={(event) => { const notes = event.target.value; setData((current) => ({ ...current, title: current.title || "Pasted study notes", notes, cards: [], questions: [], questionHistory: [], noteChunkIndex: 0, mastery: {} })); setQuiz(null); }} placeholder="Or paste notes / a syllabus here… The tutor will use only this material to answer." />
+      <div className="study-source-foot"><span>{data.notes.length.toLocaleString()} / 120,000 characters · questions rotate through {noteChunks.length} upload section{noteChunks.length === 1 ? "" : "s"} · next: {noteChunks.length ? `${(data.noteChunkIndex % noteChunks.length) + 1} of ${noteChunks.length}` : "—"}</span>{data.notes && <button className="study-text-button" onClick={() => { setData((current) => ({ ...current, title: "", notes: "", cards: [], questions: [], questionHistory: [], noteChunkIndex: 0, mastery: {}, messages: [] })); setQuiz(null); }}>Clear material</button>}</div>
     </section>
 
     <div className="study-tabs" role="tablist" aria-label="Study tools">
@@ -199,7 +230,7 @@ export default function Study() {
       {!data.notes && <small className="study-privacy"><FileText size={13}/> Add material to enable note-grounded answers.</small>}
     </section>}
 
-    {tab === "quiz" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><Brain size={21}/></span><div><strong>Exam-style practice</strong><small>Questions are grounded in your notes and adapt to weaker topics.</small></div></div>{quiz ? <div className="study-question"><span className="eyebrow">{examFormatLabels[quiz.format ?? ""] || "EXAM QUESTION"} · {quiz.topic}</span><h2>{quiz.question}</h2><form onSubmit={(event) => { event.preventDefault(); scoreQuiz(); }}><input autoComplete="off" value={quizAnswer} onChange={(event) => setQuizAnswer(event.target.value)} placeholder="Write your answer" disabled={quizChecked}/>{quizChecked ? <div className={`study-feedback ${quizAnswer.trim().toLocaleLowerCase() === quiz.answer.trim().toLocaleLowerCase() ? "correct" : "wrong"}`}>{quizAnswer.trim().toLocaleLowerCase() === quiz.answer.trim().toLocaleLowerCase() ? <Check size={17}/> : <Lightbulb size={17}/>}<span>{quizAnswer.trim().toLocaleLowerCase() === quiz.answer.trim().toLocaleLowerCase() ? "Correct." : `Review this answer: ${quiz.answer}`}<br/><small>{quiz.explanation}</small></span></div> : <Button type="submit" disabled={!quizAnswer.trim()}>Check answer <ChevronRight size={16}/></Button>}</form><details className="study-evidence"><summary>Show the supporting note</summary><p>{quiz.evidence}</p></details><Button variant="outline" disabled={quizBusy} onClick={() => void nextQuiz()}>{quizBusy ? "Preparing question…" : "Next question"} <ChevronRight size={16}/></Button></div> : <div className="study-empty"><Brain size={28}/><h2>Practice what you just studied.</h2><p>We’ll ask clear exam-style questions only when your notes contain enough factual material to support them.</p><Button onClick={() => void nextQuiz()} disabled={!data.notes || quizBusy}>{quizBusy ? "Preparing question…" : "Generate a question"} <ChevronRight size={17}/></Button></div>}</section>}
+    {tab === "quiz" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><Brain size={21}/></span><div><strong>Global exam practice</strong><small>Choose from common paper formats, grounded in your notes and rotated across the full upload.</small></div></div>{quiz ? <div className="study-question"><span className="eyebrow">{examFormatLabels[quiz.format ?? ""] || "EXAM QUESTION"} · {quiz.topic}</span><h2>{quiz.question}</h2><form onSubmit={(event) => { event.preventDefault(); scoreQuiz(); }}><QuestionResponse quiz={quiz} value={quizAnswer} disabled={quizChecked} onChange={setQuizAnswer}/>{quizChecked ? <div className={`study-feedback ${quizAnswer.trim().toLocaleLowerCase() === quiz.answer.trim().toLocaleLowerCase() ? "correct" : "wrong"}`}>{quizAnswer.trim().toLocaleLowerCase() === quiz.answer.trim().toLocaleLowerCase() ? <Check size={17}/> : <Lightbulb size={17}/>}<span>{quizAnswer.trim().toLocaleLowerCase() === quiz.answer.trim().toLocaleLowerCase() ? "Correct." : `Review this answer: ${quiz.answer}`}<br/><small>{quiz.explanation}</small></span></div> : <Button type="submit" disabled={!quizAnswer.trim()}>Check answer <ChevronRight size={16}/></Button>}</form><details className="study-evidence"><summary>Show the supporting note</summary><p>{quiz.evidence}</p></details><Button variant="outline" disabled={quizBusy} onClick={() => void nextQuiz()}>{quizBusy ? "Preparing question…" : "Next question"} <ChevronRight size={16}/></Button></div> : <div className="study-empty"><Brain size={28}/><h2>Practice what you just studied.</h2><p>Questions use suitable formats such as definitions, explanations, calculations, multiple choice, true/false, fill-in, and source-based cases. They only appear when the uploaded material supports them.</p><Button onClick={() => void nextQuiz()} disabled={!data.notes || quizBusy}>{quizBusy ? "Preparing question…" : "Generate a question"} <ChevronRight size={17}/></Button></div>}</section>}
 
     {tab === "cards" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><RotateCcw size={21}/></span><div><strong>Spaced-repetition cards</strong><small>Rate recall to schedule the next review.</small></div><span className="study-online">{dueCards.length} DUE</span></div>{dueCards.length ? <div className="study-flashcard"><span className="eyebrow">{dueCards[0].topic}</span><h2>{cardShown ? dueCards[0].back : dueCards[0].front}</h2>{cardShown ? <div className="study-ratings">{([["again", "Again"], ["hard", "Hard"], ["good", "Good"], ["easy", "Easy"]] as const).map(([rating, label]) => <button key={rating} onClick={() => reviewCard(rating)}>{label}</button>)}</div> : <Button onClick={() => setCardShown(true)}>Show answer <ChevronRight size={16}/></Button>}<small><Clock3 size={13}/> {dueCards.length} card{dueCards.length === 1 ? "" : "s"} ready to review</small></div> : <div className="study-empty"><RotateCcw size={28}/><h2>{data.cards.length ? "All caught up." : "Build your first review deck."}</h2><p>{data.cards.length ? "Come back when the next card is due." : "Cards are written as real study questions with note-backed answers."}</p><Button variant="outline" disabled={!data.notes || deckBusy} onClick={() => void generateFlashcards()}>{deckBusy ? "Creating cards…" : data.cards.length ? "Add more study cards" : "Create flashcards"} <ChevronRight size={17}/></Button></div>}</section>}
 
@@ -207,4 +238,12 @@ export default function Study() {
 
     <p className="study-note"><Lightbulb size={15}/> Study material and review history are saved in this browser on this device. Chat answers use the configured Playbit tutor service.</p>
   </div>;
+}
+
+function QuestionResponse({ quiz, value, disabled, onChange }: { quiz: StudyQuestion; value: string; disabled: boolean; onChange: (value: string) => void }) {
+  const choiceBased = ["multiple_choice", "assertion_reason", "true_false"].includes(quiz.format ?? "");
+  if (choiceBased) return <div className="study-choice-options" role="radiogroup" aria-label="Answer choices">
+    {(quiz.options ?? []).map((option, index) => <button key={index} type="button" role="radio" aria-checked={value === option} className={value === option ? "selected" : ""} disabled={disabled} onClick={() => onChange(option)}>{option}</button>)}
+  </div>;
+  return <input autoComplete="off" value={value} onChange={(event) => onChange(event.target.value)} placeholder={quiz.format === "fill_blank" ? "Fill in the missing word or phrase" : "Write your answer"} disabled={disabled}/>;
 }
