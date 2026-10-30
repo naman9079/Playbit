@@ -59,4 +59,19 @@ public class AiTutorService {
             return Map.of("source","ai-template-candidates","verified",true,"published",false,"candidates",candidates);
         } catch(Exception ex) { throw new ApiException(503,"AI candidate generation unavailable or failed validation. Live games use verified local generators."); }
     }
+    public Map<String,Object> studyChat(UUID user,String question,String context) {
+        String safeContext=context==null?"":context.substring(0,Math.min(context.length(),24000));
+        try {
+            var result=ask("You are Playbit's patient study tutor. Answer only from the supplied notes. If the notes do not contain the answer, say so clearly and ask one Socratic guiding question. Keep the answer concise and end with one helpful question. Return JSON {\"answer\": string, \"hint\": string}.",Map.of("question",question,"notes",safeContext,"language",db.one("select language from profiles where id=?",user).get("language")));
+            String answer=result.path("answer").asText(); String hint=result.path("hint").asText();
+            if(answer.isBlank() || answer.length()>4000) throw new IllegalArgumentException();
+            return Map.of("answer",answer,"hint",hint,"source","ai");
+        } catch(Exception ex) {
+            if(safeContext.isBlank()) return Map.of("answer","Upload or paste your notes first, then ask me about them.","hint","What topic are you studying?","source","fallback");
+            var sentences=Arrays.stream(safeContext.split("(?<=[.!?])\\s+"))
+                .filter(s->Arrays.stream(question.toLowerCase(Locale.ROOT).split("\\W+")).filter(w->w.length()>3).anyMatch(w->s.toLowerCase(Locale.ROOT).contains(w)))
+                .limit(3).toList();
+            return Map.of("answer",sentences.isEmpty()?"I couldn't find that in the uploaded notes. Try asking with a keyword from the syllabus, or add more material.":String.join(" ",sentences),"hint","Which key term in your question should we look for in the notes?","source","notes-search");
+        }
+    }
 }

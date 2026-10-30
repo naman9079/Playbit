@@ -32,6 +32,7 @@ const Room = lazy(() =>
 );
 const Results = lazy(() => import("./pages/Results"));
 const Progress = lazy(() => import("./pages/Progress"));
+const Study = lazy(() => import("./pages/Study"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Leaderboards = lazy(() => import("./pages/Leaderboards"));
 const client = new QueryClient({
@@ -121,6 +122,7 @@ function App() {
               <Route path="results/:id" element={<Results />} />
               <Route path="reports/:id" element={<Results />} />
               <Route path="progress" element={<Progress />} />
+              <Route path="study" element={<Study />} />
               <Route path="profile" element={<Profile />} />
               <Route path="leaderboards" element={<Leaderboards />} />
             </Route>

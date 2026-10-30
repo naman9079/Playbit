@@ -5,6 +5,7 @@ import {
   Trophy,
   ChartNoAxesCombined,
   UserRound,
+  BookOpenCheck,
   Zap,
   ArrowUpRight,
   LogOut,
@@ -40,6 +41,7 @@ export default function Shell() {
             [Gamepad2, "Play", "/play"],
             [Trophy, "Leaderboards", "/leaderboards"],
             [ChartNoAxesCombined, "Progress", "/progress"],
+            [BookOpenCheck, "Study", "/study"],
             [UserRound, "Profile", "/profile"],
           ].map(([Icon, label, to]) => {
             const I = Icon as typeof House;
