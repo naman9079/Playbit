@@ -5,6 +5,15 @@ import { supabase, configured } from "../lib/supabase";
 import { useSession } from "../stores/session";
 import { Button } from "../components/ui/button";
 import { ErrorBox, SetupNotice } from "../components/common";
+function readableAuthError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.toLowerCase().includes("email rate limit exceeded")) {
+    return new Error(
+      "Supabase’s built-in email sender has reached its 2-emails-per-hour project limit. In Supabase, open Authentication → Emails → SMTP Settings and configure a custom SMTP provider. Until it is configured, wait for the limit to reset; if you already have an account, choose Sign in.",
+    );
+  }
+  return error;
+}
 export default function Auth() {
   const session = useSession((s) => s.session);
   const [params] = useSearchParams();
@@ -74,7 +83,7 @@ export default function Auth() {
                   "Check your email to confirm your account, then sign in here.",
                 );
             } catch (ex) {
-              setError(ex);
+              setError(readableAuthError(ex));
             } finally {
               setBusy(false);
             }
