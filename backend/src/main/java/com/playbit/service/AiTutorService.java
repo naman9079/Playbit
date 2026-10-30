@@ -80,12 +80,12 @@ public class AiTutorService {
     public Map<String,Object> studyQuestions(UUID user,String context,List<String> focusTopics) {
         String notes=context==null?"":context.substring(0,Math.min(context.length(),24000));
         try {
-            var generated=ask("You are an experienced school examiner. Create up to 5 concise, useful exam/test questions using only facts explicitly present in the supplied notes. Questions must assess a definition, factual relationship, cause, process, formula, or application that the notes actually teach. Use formal exam wording (Define, State, Explain, Compare, Calculate, What, Why, How). Never write conversational prompts, opinion questions, arbitrary missing-word blanks, or questions about what the learner has tried. Do not invent facts or require knowledge absent from the notes. Prioritize supplied weak topics when they are covered. For each item return question, answer, explanation, topic, and evidence: an exact supporting quote copied from the notes. If the notes do not support a sound question, return an empty questions array. JSON only: {\"questions\":[{\"question\":\"...\",\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\",\"evidence\":\"...\"}]}.",Map.of("notes",notes,"focusTopics",focusTopics==null?List.of():focusTopics,"language",db.one("select language from profiles where id=?",user).get("language")),1800);
+            var generated=ask("You are an experienced school examiner. Create up to 5 concise, useful exam/test questions using only facts explicitly present in the supplied notes. Questions must assess a definition, factual relationship, cause, process, formula, or application that the notes actually teach. Use formal exam wording (Define, State, Explain, Compare, Calculate, What, Why, How). Every question must be fully understandable on its own and name the exact concept it asks about. Never use unresolved references such as this/that/these/those/it/they/the above, or vague labels such as 'these experiences' or 'this phenomenon'; do not turn phrases like 'the reason for these experiences' into definitions. If the notes do not explain what a reference means, skip that fact. Never write conversational prompts, opinion questions, arbitrary missing-word blanks, or questions about what the learner has tried. Do not invent facts or require knowledge absent from the notes. Prioritize supplied weak topics when they are covered. For each item return question, answer, explanation, topic, and evidence: an exact supporting quote copied from the notes. If the notes do not support a clear standalone question, return an empty questions array. JSON only: {\"questions\":[{\"question\":\"...\",\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\",\"evidence\":\"...\"}]}.",Map.of("notes",notes,"focusTopics",focusTopics==null?List.of():focusTopics,"language",db.one("select language from profiles where id=?",user).get("language")),1800);
             var questions=validatedStudyQuestions(generated.path("questions"),notes);
             if(!questions.isEmpty()) return Map.of("questions",questions,"source","ai");
         } catch(Exception ignored) { /* Use only conservative, note-backed templates below. */ }
         var questions=templateStudyQuestions(notes);
-        if(questions.isEmpty()) throw new ApiException(422,"These notes do not contain a clear definition, formula, or factual relationship for an exam question yet. Add a textbook definition or a few complete factual sentences and try again.");
+        if(questions.isEmpty()) throw new ApiException(422,"I couldn't make a clear exam question that stands on its own. These notes may refer to an earlier idea without naming it. Add the nearby explanation or a clear definition/factual sentence and try again.");
         return Map.of("questions",questions,"source","verified-notes-template");
     }
     private List<Map<String,Object>> validatedStudyQuestions(com.fasterxml.jackson.databind.JsonNode items,String notes) {
@@ -97,8 +97,9 @@ public class AiTutorService {
             String lower=question.toLowerCase(Locale.ROOT);
             boolean examWording=lower.matches("^(define|state|explain|compare|calculate|what|why|how|when|where|which|name|list|identify|describe|give|write|derive|find)\\b.*");
             boolean grounded=evidence.length()>=12 && notes.toLowerCase(Locale.ROOT).contains(evidence.toLowerCase(Locale.ROOT));
+            boolean unresolvedReference=lower.matches(".*\\b(this|that|these|those|such|above|following|previous|mentioned|given)\\b.*") || lower.matches(".*\\b(it|they|them|experiences?|phenomena|things|events)\\b.*") || lower.contains("reason for");
             String identity=lower.replaceAll("[^a-z0-9]+","");
-            if(question.length()<12 || question.length()>260 || answer.isBlank() || answer.length()>1200 || explanation.length()>1800 || topic.isBlank() || topic.length()>100 || !examWording || !grounded || lower.matches(".*\\b(ever tried|your opinion|do you think|have you ever)\\b.*") || !seen.add(identity)) continue;
+            if(question.length()<12 || question.length()>260 || answer.isBlank() || answer.length()>1200 || explanation.length()>1800 || topic.isBlank() || topic.length()>100 || !examWording || !grounded || unresolvedReference || lower.matches(".*\\b(ever tried|your opinion|do you think|have you ever)\\b.*") || !seen.add(identity)) continue;
             result.add(Map.of("question",question,"answer",answer,"explanation",explanation,"topic",topic,"evidence",evidence));
             if(result.size()==5) break;
         }
@@ -122,7 +123,7 @@ public class AiTutorService {
                 if(!match.matches()) continue;
                 String subject=match.group(1).trim().replaceAll("(?i)^(the|a|an)\\s+","");
                 String answer=match.group(2).trim();
-                if(subject.split("\\s+").length>10 || answer.length()<3 || subject.matches("(?i)^(i|you|we|they|he|she|it|this|that|there|these|those|have|do|does|did)$")) continue;
+                if(subject.split("\\s+").length>10 || answer.length()<3 || subject.matches("(?i)^(i|you|we|they|he|she|it|this|that|there|these|those|have|do|does|did)$") || subject.matches("(?i).*(\\bthis\\b|\\bthat\\b|\\bthese\\b|\\bthose\\b|\\bexperience(s)?\\b|\\bphenomenon\\b|\\breason for\\b|\\bit\\b|\\bthey\\b).*$")) continue;
                 String question=switch(rule[1]) {
                     case "formula" -> "State the formula for "+subject+".";
                     case "components" -> "List the main components of "+subject+".";
