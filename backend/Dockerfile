@@ -8,6 +8,7 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 RUN useradd --system --uid 1001 playbit
 COPY --from=build /app/target/playbit-1.0.0.jar app.jar
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 USER playbit
 EXPOSE 8080
-ENTRYPOINT ["java","-jar","app.jar"]
+ENTRYPOINT ["sh","/app/docker-entrypoint.sh"]
