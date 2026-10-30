@@ -56,7 +56,7 @@ const topicNames: Record<string, string> = {
 export function curriculumScope(match: Record<string, any>) {
   const parts = [
     match.class_level ? `Class ${match.class_level}` : "All classes",
-    match.chapter_id ? chapterNames[match.chapter_id] || match.chapter_id : null,
+    match.chapter_id ? match.chapter_name || chapterNames[match.chapter_id] || match.chapter_id : null,
     match.topic_id ? topicNames[match.topic_id] || match.topic_id : null,
   ].filter(Boolean);
   return parts.join(" · ");

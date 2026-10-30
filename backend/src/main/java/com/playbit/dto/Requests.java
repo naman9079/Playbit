@@ -6,7 +6,7 @@ public class Requests {
         @Min(0) @Max(7) int avatar, @NotBlank @Pattern(regexp="English|Hindi") String language,
         @NotBlank @Pattern(regexp="beginner|intermediate|advanced") String proficiency, @NotEmpty @Size(max=3) List<String> subjects) {}
     public record Start(@NotBlank String subjectId, String topicId, @Min(0) @Max(3) int difficulty,
-        @Min(6) @Max(12) Integer classLevel, String chapterId) {
+        @Min(1) @Max(12) Integer classLevel, String chapterId) {
         public Start(String subjectId, String topicId, int difficulty) {
             this(subjectId, topicId, difficulty, null, null);
         }

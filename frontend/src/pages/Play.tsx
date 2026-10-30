@@ -77,12 +77,12 @@ export default function Play() {
     error,
   } = useQuery({ queryKey: ["me"], queryFn: () => api("/me") });
   const curriculum = useQuery({
-    queryKey: ["curriculum", subject],
+    queryKey: ["curriculum", subject, classLevel],
     queryFn: () =>
       api<{
         classLevels: number[];
         chapters: { id: string; name: string; topics: { id: string; name: string }[] }[];
-      }>(`/subjects/${subject}/curriculum`),
+      }>(`/subjects/${subject}/curriculum${classLevel ? `?classLevel=${classLevel}` : ""}`),
   });
   const chapters = curriculum.data?.chapters ?? [];
   const selectedChapter = chapters.find((item) => item.id === chapter);
@@ -288,7 +288,11 @@ export default function Play() {
                   <select
                     disabled={searching}
                     value={classLevel}
-                    onChange={(e) => setClassLevel(e.target.value)}
+                    onChange={(e) => {
+                      setClassLevel(e.target.value);
+                      setChapter("");
+                      setTopic("");
+                    }}
                   >
                     <option value="">Any class</option>
                     {curriculum.data?.classLevels.map((level) => (
@@ -301,14 +305,14 @@ export default function Play() {
                 <label>
                   Chapter
                   <select
-                    disabled={searching}
+                    disabled={searching || !classLevel}
                     value={chapter}
                     onChange={(e) => {
                       setChapter(e.target.value);
                       setTopic("");
                     }}
                   >
-                    <option value="">All chapters</option>
+                    <option value="">{classLevel ? "All chapters" : "Choose a class first"}</option>
                     {chapters.map((item) => (
                       <option value={item.id} key={item.id}>
                         {item.name}
@@ -348,8 +352,9 @@ export default function Play() {
                 </label>
               </div>
               <small className="muted">
-                Class adjusts question number ranges. Chapter and topic filters
-                are shared by both players in ranked duels.
+                Choose a class to see its combined school-maths chapter list.
+                Chapter names and order can vary between textbooks. Chapter and
+                topic filters are shared by both players in ranked duels.
               </small>
             </div>
             <div className="start-panel">

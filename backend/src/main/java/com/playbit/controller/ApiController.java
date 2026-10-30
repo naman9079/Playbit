@@ -15,7 +15,7 @@ public class ApiController {
     @GetMapping("/health") Object health() {return Map.of("status","ok");}
     @GetMapping("/subjects") Object subjects() {return subjects.findAll();}
     @GetMapping("/subjects/{id}/topics") Object topics(@PathVariable String id) {return db.rows("select * from topics where subject_id=? order by id",id);}
-    @GetMapping("/subjects/{id}/curriculum") CurriculumService.Catalog curriculum(@PathVariable String id) {return curriculum.catalog(id);}
+    @GetMapping("/subjects/{id}/curriculum") CurriculumService.Catalog curriculum(@PathVariable String id,@RequestParam(required=false) Integer classLevel) {return curriculum.catalog(id,classLevel);}
     @GetMapping("/me") Object me(@AuthenticationPrincipal Jwt jwt) {return profiles.me(user(jwt));}
     @PutMapping("/me") Object update(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.Profile request) {return profiles.update(user(jwt),request);}
     @GetMapping("/profile/{id}") Object profile(@PathVariable UUID id) {var p=profiles.get(id); p.remove("language");p.remove("preferred_subjects");p.remove("proficiency");return p;}

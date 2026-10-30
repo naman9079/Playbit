@@ -72,6 +72,7 @@ public class MatchService {
     public Map<String,Object> state(UUID user,UUID id) {
         participant(user,id); var match=new LinkedHashMap<>(db.one("select * from matches where id=?",id)); Instant now=clock.instant();
         match.put("serverNow",now); match.put("roundSeconds",ROUND_SECONDS); match.put("maxSpeedBonus",20); match.put("correctPoints",100);
+        match.put("chapter_name",curriculum.chapterName(Db.str(match,"subject_id"),nullableInteger(match.get("class_level")),(String)match.get("chapter_id")));
         match.put("players",db.rows("select p.*,u.display_name,u.username,u.avatar_url from match_players p join profiles u on u.id=p.user_id where p.match_id=? order by u.id",id));
         var current=db.rows("select q.id,q.question_text,q.options_json,q.topic_id,q.difficulty,mq.question_order,mq.starts_at,mq.deadline_at from match_questions mq join questions q on q.id=mq.question_id where mq.match_id=? and mq.starts_at<=? and mq.deadline_at>?",id,Timestamp.from(now),Timestamp.from(now));
         if(!current.isEmpty() && Db.str(match,"status").equals("active")) {
