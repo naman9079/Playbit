@@ -11,7 +11,7 @@ services:
       - key: DATABASE_JDBC_URL
         value: jdbc:postgresql://aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres?sslmode=require
       - key: DATABASE_USERNAME
-        sync: false
+        value: postgres.wwekwmfjckgghbewptly
       - key: DATABASE_PASSWORD
         sync: false
       - key: SUPABASE_URL

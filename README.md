@@ -25,7 +25,7 @@ Vercel serves the Vite frontend. The Java Spring Boot API is a separate service 
    - `VITE_SUPABASE_URL` — the Supabase project URL.
    - `VITE_SUPABASE_ANON_KEY` — the Supabase anon/publishable key. This is a browser-visible public key; never use a service-role key here.
    The included Vercel rewrite proxies `/api/*` to the Render service, so leave `VITE_API_BASE_URL` unset in Vercel. For a direct browser-to-backend connection instead, set it to the deployed backend’s HTTPS URL ending in `/api` and configure backend CORS.
-3. Deploy the backend separately using `backend/Dockerfile` or the included `render.yaml` Blueprint. Configure its `DATABASE_JDBC_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`, and `SUPABASE_URL`. The Render Blueprint sets the JDBC URL for the supplied Supabase project; provide the database username and password in their separate fields. Keep database credentials only on the backend host.
+3. Deploy the backend separately using `backend/Dockerfile` or the included `render.yaml` Blueprint. Configure its `DATABASE_JDBC_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`, and `SUPABASE_URL`. The Render Blueprint sets the JDBC URL and Supabase pooler username for this project; enter only the database password in Render. Keep database credentials only on the backend host.
 4. In Supabase **Authentication → URL Configuration**, set the production Site URL to the Vercel origin and add `https://your-project.vercel.app/play` to the redirect URL allowlist. Add the corresponding Preview URL patterns if preview deployments need email confirmation redirects.
 5. Redeploy the frontend after adding or changing the variables. Vite embeds `VITE_` values during the build, so changing them does not update an existing deployment.
 
