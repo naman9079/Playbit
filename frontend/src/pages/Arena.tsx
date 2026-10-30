@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -131,6 +131,7 @@ export default function Arena() {
   const [now, setNow] = useState(Date.now());
   const [selected, setSelected] = useState<string | null>(null);
   const [localAccepted, setLocalAccepted] = useState(false);
+  const boundaryRefreshFor = useRef<string | null>(null);
   const question = m?.question;
   const submit = useMutation({
     mutationFn: (answer: string) =>
@@ -189,6 +190,23 @@ export default function Arena() {
     0,
     Math.ceil((new Date(m.started_at).getTime() - serverNow) / 1000),
   );
+  const boundaryKey =
+    question?.id ??
+    (m.status === "active" ? `start:${m.started_at}` : null);
+  const boundaryReached = question
+    ? remaining <= 0
+    : m.status === "active" && secondsToStart <= 0;
+  useEffect(() => {
+    if (!boundaryKey) return;
+    if (!boundaryReached) {
+      if (boundaryRefreshFor.current === boundaryKey)
+        boundaryRefreshFor.current = null;
+      return;
+    }
+    if (boundaryRefreshFor.current === boundaryKey) return;
+    boundaryRefreshFor.current = boundaryKey;
+    void cache.invalidateQueries({ queryKey: ["match", id], exact: true });
+  }, [boundaryKey, boundaryReached, cache, id]);
   return (
     <div className="arena-page">
       <div className="arena-heading">

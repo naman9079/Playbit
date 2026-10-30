@@ -94,12 +94,27 @@ public class MatchService {
         return Map.of("accepted",true,"questionId",answer.questionId());
     }
     public static int score(boolean correct,int elapsed) { return correct?100+Math.max(0,(int)Math.floor(20*(1-elapsed/15000.0))):0; }
-    @Transactional public void tickAll() { lock(); for(var m:db.rows("select id from matches where status='active'")) tick(UUID.fromString(Db.str(m,"id"))); }
+    @Transactional public void tickAll() {
+        Instant now=clock.instant(); Timestamp timestamp=Timestamp.from(now);
+        var due=db.rows("""
+            select m.id from matches m where m.status='active' and (
+              exists(select 1 from match_questions q where q.match_id=m.id and q.deadline_at<=?)
+              or (m.mode='bot' and m.bot_score<>coalesce((
+                select sum(q.bot_points) from match_questions q where q.match_id=m.id and q.bot_answer_at<=?
+              ),0))
+            )
+            """,timestamp,timestamp);
+        if(due.isEmpty()) return;
+        lock();
+        for(var m:due) tick(UUID.fromString(Db.str(m,"id")));
+    }
     void tick(UUID id) {
         var m=db.one("select * from matches where id=?",id); if(!Db.str(m,"status").equals("active")) return;
         Instant now=clock.instant();
         var players=db.rows("select * from match_players where match_id=? order by user_id",id);
         var ended=db.rows("select mq.*,q.topic_id from match_questions mq join questions q on q.id=mq.question_id where mq.match_id=? and mq.deadline_at<=?",id,Timestamp.from(now));
+        int botScore=Db.str(m,"mode").equals("bot")?db.count("select coalesce(sum(bot_points),0) from match_questions where match_id=? and bot_answer_at<=?",id,Timestamp.from(now)):0;
+        if(ended.isEmpty() && botScore==Db.integer(m,"bot_score")) return;
         for(var p:players) {
             UUID user=UUID.fromString(Db.str(p,"user_id"));
             for(var q:ended) if(db.count("select count(*) from question_attempts where match_id=? and user_id=? and question_id=?",id,user,q.get("question_id"))==0)
@@ -107,7 +122,6 @@ public class MatchService {
             int score=db.count("select coalesce(sum(a.awarded_points),0) from question_attempts a join match_questions mq on mq.match_id=a.match_id and mq.question_id=a.question_id where a.match_id=? and a.user_id=? and mq.deadline_at<=?",id,user,Timestamp.from(now));
             db.run("update match_players set score=? where match_id=? and user_id=?",score,id,user);
         }
-        int botScore=Db.str(m,"mode").equals("bot")?db.count("select coalesce(sum(bot_points),0) from match_questions where match_id=? and bot_answer_at<=?",id,Timestamp.from(now)):0;
         db.run("update matches set bot_score=?,version=version+1 where id=?",botScore,id);
         if(ended.size()==Db.integer(m,"question_count")) finish(m,botScore,now);
     }

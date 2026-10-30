@@ -13,7 +13,9 @@ export function useMatch(id: string) {
       q.state.data?.status === "completed" ||
       q.state.data?.status === "cancelled"
         ? false
-        : 1000,
+        : q.state.data?.status === "active"
+          ? 5000
+          : 2000,
     refetchOnWindowFocus: true,
   });
   useEffect(() => {
