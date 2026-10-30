@@ -225,7 +225,7 @@ export default function Play() {
           </button>
         ))}
       </div>
-      {!rating?.assessed ? (
+      {!rating?.assessed && mode !== "friend" ? (
         <div className="placement panel">
           <div className="placement-symbol">✳</div>
           <div>
@@ -251,6 +251,14 @@ export default function Play() {
             >
               Start my placement <ArrowRight size={18} />
             </Button>
+            <p>Joining a friend? Private duels do not require placement.</p>
+            <Button
+              variant="outline"
+              disabled={start.isPending}
+              onClick={() => setMode("friend")}
+            >
+              Play with a friend <Users size={18} />
+            </Button>
           </div>
         </div>
       ) : (
@@ -260,7 +268,9 @@ export default function Play() {
             eyebrow="02 / YOUR MODE"
           >
             <span className="rating-pill">
-              {rating.rating} rating {rating.provisional && "· Provisional"}
+              {rating?.assessed
+                ? `${rating.rating} rating${rating.provisional ? " · Provisional" : ""}`
+                : "Unranked · No placement needed"}
             </span>
           </SectionTitle>
           <div className="mode-grid">
@@ -387,7 +397,7 @@ export default function Play() {
                 {mode === "bot"
                   ? "Byte is a simulated bot. Bot games earn XP without changing your ranked rating."
                   : mode === "friend"
-                    ? "Friend duels are unranked. Share a code and get ready together."
+                    ? "Friend duels are unranked—no placement needed. Share a code and get ready together."
                     : mode === "ranked"
                       ? "Ranked play changes your subject rating. No available rival? Try a bot warm-up."
                       : "Make mistakes, get explanations, and grow your topic mastery."}

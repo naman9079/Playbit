@@ -105,14 +105,29 @@ class ApiIntegrationTest {
         assertEquals("verified-fallback",request(post("/api/ai/reports/"+id),alice).path("source").asText());
     }
     @Test void friendDuelHasSameQuestionsRecoversAndRejectsThirdPlayer() throws Exception {
-        assessed(alice);assessed(bob);var room=request(body(post("/api/rooms/create"),Map.of("subjectId","math","difficulty",2)),alice);String id=room.path("id").asText();String code=room.path("room_code").asText();request(body(post("/api/rooms/join"),Map.of("code",code)),bob);
-        UUID third=UUID.randomUUID();profile(third);assessed(third);mvc.perform(as(body(post("/api/rooms/join"),Map.of("code",code)),third)).andExpect(status().isConflict());
+        var room=request(body(post("/api/rooms/create"),Map.of("subjectId","math","difficulty",2)),alice);String id=room.path("id").asText();String code=room.path("room_code").asText();request(body(post("/api/rooms/join"),Map.of("code",code)),bob);
+        UUID third=UUID.randomUUID();profile(third);mvc.perform(as(body(post("/api/rooms/join"),Map.of("code",code)),third)).andExpect(status().isConflict());
         request(post("/api/rooms/"+id+"/ready"),alice);request(post("/api/rooms/"+id+"/ready"),bob);
         now=MatchService.instant(questions(id).getFirst().get("starts_at")).plusSeconds(1);
         assertEquals(request(get("/api/matches/"+id),alice).path("question").path("id"),request(get("/api/matches/"+id),bob).path("question").path("id"));
         duel(id);finish(id);
         assertEquals("win",request(get("/api/reports/"+id),alice).path("summary").path("outcome").asText());assertEquals("loss",request(get("/api/reports/"+id),bob).path("summary").path("outcome").asText());
         assertEquals(1000,request(get("/api/reports/"+id),alice).path("summary").path("rating_after").asInt());assertEquals(130,request(get("/api/reports/"+id),alice).path("summary").path("xp_earned").asInt());
+        assertEquals(0,db.count("select count(*) from user_subject_ratings where user_id in (?,?) and assessed=true",alice,bob));
+        mvc.perform(as(body(post("/api/matchmaking/join"),Map.of("subjectId","math","difficulty",0)),alice)).andExpect(status().isConflict());
+        // A private game must not consume or complete the player's placement.
+        assertEquals("diagnostic",start(alice,"diagnostic","math").path("mode").asText());
+    }
+    @Test void friendRoomsStillRequireProfilesAndOnlyOneUnfinishedMatch() throws Exception {
+        UUID newcomer=UUID.randomUUID();
+        mvc.perform(as(body(post("/api/rooms/create"),Map.of("subjectId","math","difficulty",2)),newcomer)).andExpect(status().isConflict());
+        var room=request(body(post("/api/rooms/create"),Map.of("subjectId","math","difficulty",2)),alice);
+        var invite=Map.of("code",room.path("room_code").asText());
+        mvc.perform(as(body(post("/api/rooms/join"),invite),newcomer)).andExpect(status().isConflict());
+        var other=request(body(post("/api/rooms/create"),Map.of("subjectId","logic","difficulty",2)),bob);
+        mvc.perform(as(body(post("/api/rooms/join"),invite),bob)).andExpect(status().isConflict());
+        request(post("/api/rooms/"+other.path("id").asText()+"/leave"),bob);
+        assertEquals(room.path("id"),request(body(post("/api/rooms/join"),invite),bob).path("id"));
     }
     @Test void rankedQueueIsAtomicAndRatingUpdatesAreZeroSum() throws Exception {
         assessed(alice);assessed(bob);request(body(post("/api/matchmaking/join"),Map.of("subjectId","logic","difficulty",0)),alice);var paired=request(body(post("/api/matchmaking/join"),Map.of("subjectId","logic","difficulty",0)),bob);String id=paired.path("matchId").asText();assertFalse(id.isEmpty());

@@ -17,7 +17,7 @@ public class MatchmakingService {
         return requested==null?stored==null:stored instanceof Number number && number.intValue()==requested;
     }
     @Transactional public Map<String,Object> create(UUID user,Requests.Start r) {
-        matches.lock();matches.eligible(user,r.subjectId(),false);matches.available(user);
+        matches.lock();matches.eligibleForFriend(user,r.subjectId());matches.available(user);
         db.run("delete from matchmaking_queue where user_id=?",user);
         String code; var random=new SecureRandom(); String alphabet="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
         do { var s=new StringBuilder(); for(int i=0;i<6;i++) s.append(alphabet.charAt(random.nextInt(alphabet.length())));code=s.toString(); } while(db.count("select count(*) from matches where room_code=?",code)>0);
@@ -26,7 +26,7 @@ public class MatchmakingService {
     @Transactional public Map<String,Object> join(UUID user,String code) {
         matches.lock(); var room=db.one("select * from matches where room_code=?",code.toUpperCase(Locale.ROOT)); UUID id=UUID.fromString(Db.str(room,"id"));
         if(db.count("select count(*) from match_players where match_id=? and user_id=?",id,user)>0) return matches.state(user,id);
-        matches.eligible(user,Db.str(room,"subject_id"),false); matches.available(user);
+        matches.eligibleForFriend(user,Db.str(room,"subject_id")); matches.available(user);
         if(!Db.str(room,"status").equals("waiting") || db.count("select count(*) from match_players where match_id=?",id)>=2) throw new ApiException(409,"This room is full or has already started");
         db.run("delete from matchmaking_queue where user_id=?",user);matches.addPlayer(id,user,Db.str(room,"subject_id"));
         db.run("update matches set version=version+1 where id=?",id);return matches.state(user,id);

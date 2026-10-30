@@ -23,10 +23,18 @@ public class MatchService {
     public static Instant instant(Object value) { if(value instanceof OffsetDateTime d) return d.toInstant(); if(value instanceof Timestamp t) return t.toInstant(); return Instant.parse(value.toString()); }
     public void validateCurriculum(String subject,Integer classLevel,String chapter,String topic) { curriculum.selectedTopics(subject,classLevel,chapter,topic); }
     public void participant(UUID user,UUID match) { if(db.count("select count(*) from match_players where user_id=? and match_id=?",user,match)==0) throw new ApiException(403,"You are not a participant in this match"); }
-    void eligible(UUID user,String subject,boolean diagnostic) {
+    void requirePlayerProfile(UUID user) {
         profiles.ensure(user);
         var profile=db.one("select * from profiles where id=?",user);
         if(!Boolean.TRUE.equals(profile.get("onboarded"))) throw new ApiException(409,"Complete your player profile first");
+    }
+    void eligibleForFriend(UUID user,String subject) {
+        requirePlayerProfile(user);
+        // Private duels do not use placement for matchmaking or change subject ratings.
+        db.one("select rating from user_subject_ratings where user_id=? and subject_id=?",user,subject);
+    }
+    void eligible(UUID user,String subject,boolean diagnostic) {
+        requirePlayerProfile(user);
         var rating=db.one("select * from user_subject_ratings where user_id=? and subject_id=?",user,subject);
         if(!diagnostic && !Boolean.TRUE.equals(rating.get("assessed"))) throw new ApiException(409,"Complete this subject's placement first");
         if(diagnostic && Boolean.TRUE.equals(rating.get("assessed"))) throw new ApiException(409,"Placement is already complete for this subject");
