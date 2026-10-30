@@ -14,7 +14,7 @@ export function useMatch(id: string) {
       q.state.data?.status === "cancelled"
         ? false
         : q.state.data?.status === "active"
-          ? 5000
+          ? 1000
           : 2000,
     refetchOnWindowFocus: true,
   });

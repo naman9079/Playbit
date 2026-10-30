@@ -1,4 +1,11 @@
-import { Component, useEffect, type ErrorInfo, type ReactNode } from "react";
+import {
+  Component,
+  lazy,
+  Suspense,
+  useEffect,
+  type ErrorInfo,
+  type ReactNode,
+} from "react";
 import { createRoot } from "react-dom/client";
 import {
   BrowserRouter,
@@ -14,16 +21,19 @@ import { supabase } from "./lib/supabase";
 import { useSession } from "./stores/session";
 import Shell from "./components/Shell";
 import { Loading } from "./components/common";
-import Home from "./pages/Home";
-import Auth from "./pages/Auth";
-import Onboarding from "./pages/Onboarding";
-import Play from "./pages/Play";
-import Arena, { Room } from "./pages/Arena";
-import Results from "./pages/Results";
-import Progress from "./pages/Progress";
-import Profile from "./pages/Profile";
-import Leaderboards from "./pages/Leaderboards";
 import "./styles.css";
+const Home = lazy(() => import("./pages/Home"));
+const Auth = lazy(() => import("./pages/Auth"));
+const Onboarding = lazy(() => import("./pages/Onboarding"));
+const Play = lazy(() => import("./pages/Play"));
+const Arena = lazy(() => import("./pages/Arena"));
+const Room = lazy(() =>
+  import("./pages/Arena").then((module) => ({ default: module.Room })),
+);
+const Results = lazy(() => import("./pages/Results"));
+const Progress = lazy(() => import("./pages/Progress"));
+const Profile = lazy(() => import("./pages/Profile"));
+const Leaderboards = lazy(() => import("./pages/Leaderboards"));
 const client = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, staleTime: 15000 },
@@ -95,35 +105,37 @@ function App() {
   }, [setSession]);
   return (
     <AppErrorBoundary>
-      <Routes>
-        <Route element={<Shell />}>
-          <Route index element={<Home />} />
-          <Route path="auth" element={<Auth />} />
-          <Route element={<Protected />}>
-            <Route path="onboarding" element={<Onboarding />} />
-            <Route path="play" element={<Play />} />
-            <Route path="subjects" element={<Play />} />
-            <Route path="room/:id" element={<Room />} />
-            <Route path="arena/:id" element={<Arena />} />
-            <Route path="diagnostic/:id" element={<Arena />} />
-            <Route path="recovery/:id" element={<Arena />} />
-            <Route path="results/:id" element={<Results />} />
-            <Route path="reports/:id" element={<Results />} />
-            <Route path="progress" element={<Progress />} />
-            <Route path="profile" element={<Profile />} />
-            <Route path="leaderboards" element={<Leaderboards />} />
+      <Suspense fallback={<Loading />}>
+        <Routes>
+          <Route element={<Shell />}>
+            <Route index element={<Home />} />
+            <Route path="auth" element={<Auth />} />
+            <Route element={<Protected />}>
+              <Route path="onboarding" element={<Onboarding />} />
+              <Route path="play" element={<Play />} />
+              <Route path="subjects" element={<Play />} />
+              <Route path="room/:id" element={<Room />} />
+              <Route path="arena/:id" element={<Arena />} />
+              <Route path="diagnostic/:id" element={<Arena />} />
+              <Route path="recovery/:id" element={<Arena />} />
+              <Route path="results/:id" element={<Results />} />
+              <Route path="reports/:id" element={<Results />} />
+              <Route path="progress" element={<Progress />} />
+              <Route path="profile" element={<Profile />} />
+              <Route path="leaderboards" element={<Leaderboards />} />
+            </Route>
+            <Route
+              path="*"
+              element={
+                <div className="empty">
+                  <h1>Out of bounds.</h1>
+                  <Link to="/">Back to the playground →</Link>
+                </div>
+              }
+            />
           </Route>
-          <Route
-            path="*"
-            element={
-              <div className="empty">
-                <h1>Out of bounds.</h1>
-                <Link to="/">Back to the playground →</Link>
-              </div>
-            }
-          />
-        </Route>
-      </Routes>
+        </Routes>
+      </Suspense>
     </AppErrorBoundary>
   );
 }

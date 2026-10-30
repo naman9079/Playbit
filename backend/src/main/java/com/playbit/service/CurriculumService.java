@@ -228,8 +228,11 @@ public class CurriculumService {
 
     public String chapterName(String subject, Integer classLevel, String chapterId) {
         if (chapterId == null) return null;
-        return catalog(subject, classLevel).chapters().stream()
-            .filter(chapter -> chapter.id().equals(chapterId)).map(Chapter::name).findFirst().orElse(null);
+        var specs = subject.equals("math")
+            ? (classLevel == null ? MATH_CHAPTERS.values().stream().flatMap(List::stream).toList() : MATH_CHAPTERS.getOrDefault(classLevel, List.of()))
+            : OTHER_CHAPTERS.getOrDefault(subject, List.of());
+        return specs.stream().filter(chapter -> chapter.id().equals(chapterId))
+            .map(ChapterSpec::name).findFirst().orElse(null);
     }
 
     public List<String> selectedTopics(String subject, Integer classLevel, String chapterId, String topicId) {

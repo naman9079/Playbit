@@ -68,7 +68,7 @@ public class MatchService {
         }
         db.run("update matches set status='active',started_at=?,version=version+1 where id=?",Timestamp.from(start),id);
     }
-    @Transactional public Map<String,Object> get(UUID user,UUID id) { lock(); participant(user,id); tick(id); return state(user,id); }
+    @Transactional(readOnly=true) public Map<String,Object> get(UUID user,UUID id) { return state(user,id); }
     public Map<String,Object> state(UUID user,UUID id) {
         participant(user,id); var match=new LinkedHashMap<>(db.one("select * from matches where id=?",id)); Instant now=clock.instant();
         match.put("serverNow",now); match.put("roundSeconds",ROUND_SECONDS); match.put("maxSpeedBonus",20); match.put("correctPoints",100);
