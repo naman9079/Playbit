@@ -24,6 +24,7 @@ export async function api<T = Record<string, any>>(
     `${apiBaseUrl}${path}`,
     {
       method,
+      cache: method === "GET" ? "no-store" : undefined,
       headers: {
         "Content-Type": "application/json",
         ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),

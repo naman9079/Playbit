@@ -78,13 +78,15 @@ export default function Play() {
   } = useQuery({ queryKey: ["me"], queryFn: () => api("/me") });
   const curriculum = useQuery({
     queryKey: ["curriculum", subject, classLevel],
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
     queryFn: () =>
       api<{
         classLevels: number[];
         chapters: { id: string; name: string; topics: { id: string; name: string }[] }[];
       }>(`/subjects/${subject}/curriculum${classLevel ? `?classLevel=${classLevel}` : ""}`),
   });
-  const chapters = curriculum.data?.chapters ?? [];
+  const chapters = curriculum.isError ? [] : curriculum.data?.chapters ?? [];
   const selectedChapter = chapters.find((item) => item.id === chapter);
   const availableTopics = selectedChapter
     ? selectedChapter.topics
@@ -305,14 +307,20 @@ export default function Play() {
                 <label>
                   Chapter
                   <select
-                    disabled={searching || !classLevel}
+                    disabled={searching || !classLevel || curriculum.isFetching}
                     value={chapter}
                     onChange={(e) => {
                       setChapter(e.target.value);
                       setTopic("");
                     }}
                   >
-                    <option value="">{classLevel ? "All chapters" : "Choose a class first"}</option>
+                    <option value="">
+                      {!classLevel
+                        ? "Choose a class first"
+                        : curriculum.isFetching
+                          ? "Loading chapters…"
+                          : "All chapters"}
+                    </option>
                     {chapters.map((item) => (
                       <option value={item.id} key={item.id}>
                         {item.name}
@@ -351,6 +359,7 @@ export default function Play() {
                   </select>
                 </label>
               </div>
+              <ErrorBox error={curriculum.error} />
               <small className="muted">
                 Choose a class to see its combined school-maths chapter list.
                 Chapter names and order can vary between textbooks. Chapter and
