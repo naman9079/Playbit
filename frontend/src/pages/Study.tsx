@@ -13,8 +13,8 @@ type ChatMessage = { role: "user" | "assistant"; text: string; hint?: string };
 type Flashcard = { id: string; front: string; back: string; topic: string; dueAt: number; interval: number; ease: number };
 type StudyQuestion = { format?: string; question: string; answer: string; explanation: string; topic: string; evidence: string };
 type Mastery = Record<string, { correct: number; total: number }>;
-type StudyData = { title: string; notes: string; messages: ChatMessage[]; cards: Flashcard[]; questions: StudyQuestion[]; mastery: Mastery };
-const empty: StudyData = { title: "", notes: "", messages: [], cards: [], questions: [], mastery: {} };
+type StudyData = { title: string; notes: string; messages: ChatMessage[]; cards: Flashcard[]; questions: StudyQuestion[]; questionHistory: StudyQuestion[]; mastery: Mastery };
+const empty: StudyData = { title: "", notes: "", messages: [], cards: [], questions: [], questionHistory: [], mastery: {} };
 const storeKey = (userId: string) => `playbit-study-v2-${userId}`;
 const legacyStoreKey = (userId: string) => `playbit-study-v1-${userId}`;
 const clampText = (value: string) => value.slice(0, 120_000);
@@ -76,7 +76,7 @@ export default function Study() {
       const extracted = await extractStudyFile(file);
       const text = clampText(extracted.replace(/\u0000/g, " ").trim());
       if (!text) throw new Error(`No selectable text was found in “${file.name}”. Scanned documents and images need OCR before upload.`);
-      setData((current) => ({ ...current, title: file.name, notes: text, messages: [], cards: [], questions: [], mastery: {} }));
+      setData((current) => ({ ...current, title: file.name, notes: text, messages: [], cards: [], questions: [], questionHistory: [], mastery: {} }));
       setChatError("");
     } catch (error) {
       setChatError(error instanceof Error ? error.message : `Could not read “${file.name}”. Try exporting it to a common document format.`);
@@ -103,6 +103,11 @@ export default function Study() {
     const generated = await api<{ questions: StudyQuestion[] }>("/study/questions", "POST", {
       context: data.notes.slice(0, 24_000),
       focusTopics: topics.slice(0, 3).map(([topic]) => topic),
+      recentQuestions: [
+        ...data.questionHistory.map(({ question, topic, evidence }) => ({ question, topic, evidence })),
+        ...data.cards.map((card) => ({ question: card.front, topic: card.topic, evidence: "" })),
+        ...data.questions.map(({ question, topic, evidence }) => ({ question, topic, evidence })),
+      ].slice(-40),
     });
     return generated.questions;
   }
@@ -121,7 +126,7 @@ export default function Study() {
     const [next, ...remaining] = current;
     if (!next) { setChatError("No clear exam questions could be made from these notes. Add definitions, formulas, or factual explanations and try again."); return; }
     setQuiz(next); setQuizAnswer(""); setQuizChecked(false); setTab("quiz");
-    setData((previous) => ({ ...previous, questions: remaining }));
+    setData((previous) => ({ ...previous, questions: remaining, questionHistory: [...previous.questionHistory, next].slice(-40) }));
   }
 
   async function generateFlashcards() {
@@ -134,7 +139,7 @@ export default function Study() {
         id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
         front: item.question, back: item.answer, topic: item.topic, dueAt: Date.now(), interval: 0, ease: 2.5,
       }));
-      setData((previous) => ({ ...previous, cards: [...previous.cards, ...cards] }));
+      setData((previous) => ({ ...previous, cards: [...previous.cards, ...cards], questionHistory: [...previous.questionHistory, ...questions].slice(-40) }));
     } catch (error) {
       setChatError(error instanceof Error ? error.message : "Could not make flashcards from these notes.");
     } finally { setDeckBusy(false); }
@@ -173,8 +178,8 @@ export default function Study() {
         <input ref={fileRef} hidden type="file" accept="*/*" onChange={(event) => { void importFile(event.target.files?.[0]); event.currentTarget.value = ""; }}/>
         <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload size={16}/> Upload notes</Button>
       </div>
-      <textarea aria-label="Paste notes or syllabus" value={data.notes} maxLength={120_000} onChange={(event) => { const notes = event.target.value; setData((current) => ({ ...current, title: current.title || "Pasted study notes", notes, cards: [], questions: [], mastery: {} })); setQuiz(null); }} placeholder="Or paste notes / a syllabus here… The tutor will use only this material to answer." />
-      <div className="study-source-foot"><span>{data.notes.length.toLocaleString()} / 120,000 characters · saved in this browser for your account</span>{data.notes && <button className="study-text-button" onClick={() => { setData((current) => ({ ...current, title: "", notes: "", cards: [], questions: [], mastery: {}, messages: [] })); setQuiz(null); }}>Clear material</button>}</div>
+      <textarea aria-label="Paste notes or syllabus" value={data.notes} maxLength={120_000} onChange={(event) => { const notes = event.target.value; setData((current) => ({ ...current, title: current.title || "Pasted study notes", notes, cards: [], questions: [], questionHistory: [], mastery: {} })); setQuiz(null); }} placeholder="Or paste notes / a syllabus here… The tutor will use only this material to answer." />
+      <div className="study-source-foot"><span>{data.notes.length.toLocaleString()} / 120,000 characters · saved in this browser for your account</span>{data.notes && <button className="study-text-button" onClick={() => { setData((current) => ({ ...current, title: "", notes: "", cards: [], questions: [], questionHistory: [], mastery: {}, messages: [] })); setQuiz(null); }}>Clear material</button>}</div>
     </section>
 
     <div className="study-tabs" role="tablist" aria-label="Study tools">

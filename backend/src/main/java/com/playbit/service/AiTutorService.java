@@ -77,18 +77,19 @@ public class AiTutorService {
             return Map.of("answer",sentences.isEmpty()?"I couldn't find that in the uploaded notes. Try asking with a keyword from the syllabus, or add more material.":String.join(" ",sentences),"hint","Which key term in your question should we look for in the notes?","source","notes-search");
         }
     }
-    public Map<String,Object> studyQuestions(UUID user,String context,List<String> focusTopics) {
+    public Map<String,Object> studyQuestions(UUID user,String context,List<String> focusTopics,List<com.playbit.dto.Requests.StudyQuestionHistory> recentQuestions) {
         String notes=context==null?"":context.substring(0,Math.min(context.length(),24000));
+        var history=recentQuestions==null?List.<com.playbit.dto.Requests.StudyQuestionHistory>of():recentQuestions.stream().filter(Objects::nonNull).toList();
         try {
-            var generated=ask("You are an experienced Indian school textbook and exam-paper setter. Create up to 5 concise, useful questions in the style of real school books and written exams, using only facts explicitly present in the supplied notes. Use familiar paper formats where supported: Define/What is meant by, Give a reason, Explain why/how, State/List, Differentiate between, or Calculate/Solve. Prefer direct academic wording and test understanding, not the wording of the notes. Every question must stand alone, name the exact concept, and be answerable from the supplied notes. Never use chatty or opinion wording, arbitrary missing-word blanks, or ask what a student has tried. Never use unresolved references such as this/that/these/those/it/they/the above or vague labels like 'these experiences' and 'this phenomenon'. When a note uses such a vague phrase but clearly describes a specific process, rewrite the question around the concrete process named in the note; otherwise skip it. Do not invent facts or require knowledge absent from the notes. Prioritize supplied weak topics when covered. For each item return format (one of definition, give_reason, explanation, comparison, calculation, formula, list, short_answer), question, answer, explanation, topic, and evidence: an exact supporting quote copied from the notes. If no clear exam question is supported, return an empty questions array. JSON only: {\"questions\":[{\"format\":\"...\",\"question\":\"...\",\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\",\"evidence\":\"...\"}]}.",Map.of("notes",notes,"focusTopics",focusTopics==null?List.of():focusTopics,"language",db.one("select language from profiles where id=?",user).get("language")),1800);
-            var questions=validatedStudyQuestions(generated.path("questions"),notes);
+            var generated=ask("You are an experienced Indian school textbook and exam-paper setter. Create up to 5 concise, useful questions in the style of real school books and written exams, using only facts explicitly present in the supplied notes. Use familiar paper formats where supported: Define/What is meant by, Give a reason, Explain why/how, State/List, Differentiate between, or Calculate/Solve. Prefer direct academic wording and test understanding, not the wording of the notes. Every question must stand alone, name the exact concept, and be answerable from the supplied notes. Do not repeat, paraphrase, or retest any question or fact in recentQuestions. Select different facts/evidence from the notes; if no distinct fact remains, return fewer questions or an empty array. Never use chatty or opinion wording, arbitrary missing-word blanks, or ask what a student has tried. Never use unresolved references such as this/that/these/those/it/they/the above or vague labels like 'these experiences' and 'this phenomenon'. When a note uses such a vague phrase but clearly describes a specific process, rewrite the question around the concrete process named in the note; otherwise skip it. Do not invent facts or require knowledge absent from the notes. Prioritize supplied weak topics when covered. For each item return format (one of definition, give_reason, explanation, comparison, calculation, formula, list, short_answer), question, answer, explanation, topic, and evidence: an exact supporting quote copied from the notes. If no clear distinct exam question is supported, return an empty questions array. JSON only: {\"questions\":[{\"format\":\"...\",\"question\":\"...\",\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\",\"evidence\":\"...\"}]}.",Map.of("notes",notes,"focusTopics",focusTopics==null?List.of():focusTopics,"recentQuestions",history,"language",db.one("select language from profiles where id=?",user).get("language")),2200);
+            var questions=validatedStudyQuestions(generated.path("questions"),notes,history);
             if(!questions.isEmpty()) return Map.of("questions",questions,"source","ai");
         } catch(Exception ignored) { /* Use only conservative, note-backed templates below. */ }
-        var questions=templateStudyQuestions(notes);
-        if(questions.isEmpty()) throw new ApiException(422,"I couldn't make a clear exam question that stands on its own. These notes may refer to an earlier idea without naming it. Add the nearby explanation or a clear definition/factual sentence and try again.");
+        var questions=templateStudyQuestions(notes,history);
+        if(questions.isEmpty()) throw new ApiException(422,history.isEmpty()?"I couldn't make a clear exam question that stands on its own. These notes may refer to an earlier idea without naming it. Add the nearby explanation or a clear definition/factual sentence and try again.":"You've already practiced the distinct exam questions supported by these notes. Add more material or another section to get new questions.");
         return Map.of("questions",questions,"source","verified-notes-template");
     }
-    private List<Map<String,Object>> validatedStudyQuestions(com.fasterxml.jackson.databind.JsonNode items,String notes) {
+    private List<Map<String,Object>> validatedStudyQuestions(com.fasterxml.jackson.databind.JsonNode items,String notes,List<com.playbit.dto.Requests.StudyQuestionHistory> history) {
         var result=new ArrayList<Map<String,Object>>();var seen=new HashSet<String>();
         if(!items.isArray()) return result;
         for(var item:items) {
@@ -100,13 +101,13 @@ public class AiTutorService {
             boolean grounded=evidence.length()>=12 && notes.toLowerCase(Locale.ROOT).contains(evidence.toLowerCase(Locale.ROOT));
             boolean unresolvedReference=lower.matches(".*\\b(this|that|these|those|such|above|following|previous|mentioned|given)\\b.*") || lower.matches(".*\\b(it|they|them|experiences?|phenomena|things|events)\\b.*") || lower.contains("reason for");
             String identity=lower.replaceAll("[^a-z0-9]+","");
-            if(question.length()<12 || question.length()>260 || answer.isBlank() || answer.length()>1200 || explanation.length()>1800 || topic.isBlank() || topic.length()>100 || !Set.of("definition","give_reason","explanation","comparison","calculation","formula","list","short_answer").contains(format) || !examWording || !grounded || unresolvedReference || lower.matches(".*\\b(ever tried|your opinion|do you think|have you ever)\\b.*") || !seen.add(identity)) continue;
+            if(question.length()<12 || question.length()>260 || answer.isBlank() || answer.length()>1200 || explanation.length()>1800 || topic.isBlank() || topic.length()>100 || !Set.of("definition","give_reason","explanation","comparison","calculation","formula","list","short_answer").contains(format) || !examWording || !grounded || unresolvedReference || lower.matches(".*\\b(ever tried|your opinion|do you think|have you ever)\\b.*") || !seen.add(identity) || isRepeatedStudyQuestion(question,evidence,history,result)) continue;
             result.add(Map.of("format",format,"question",question,"answer",answer,"explanation",explanation,"topic",topic,"evidence",evidence));
             if(result.size()==5) break;
         }
         return result;
     }
-    private List<Map<String,Object>> templateStudyQuestions(String notes) {
+    private List<Map<String,Object>> templateStudyQuestions(String notes,List<com.playbit.dto.Requests.StudyQuestionHistory> history) {
         var result=new ArrayList<Map<String,Object>>();var seen=new HashSet<String>();
         var patterns=List.of(
             new String[]{"(?i)^(?:the )?formula for (.{2,80}?)\\s+is\\s+(.{3,200})$","formula"},
@@ -120,7 +121,8 @@ public class AiTutorService {
             String evidence=raw.replaceAll("^[\\s•*#\\-]+","").trim().replaceAll("[.!?]+$","").trim();
             if(evidence.length()<24 || evidence.length()>360 || evidence.matches("(?i)^(have you|do you|what do you|in my opinion|i think)\\b.*")) continue;
             if(evidence.matches("(?i)^the reason for (these|those|such) experiences is .+") && evidence.toLowerCase(Locale.ROOT).contains("discharge of electric charges through") && evidence.toLowerCase(Locale.ROOT).contains("rubbing of insulating surfaces")) {
-                result.add(Map.of("format","give_reason","question","Give a reason why electric charges accumulated by rubbing insulating surfaces discharge through the human body.","answer","Rubbing insulating surfaces builds up electric charges. These charges can discharge through the body.","explanation","The note links rubbing insulating surfaces to accumulated electric charges and their discharge through the body.","topic","Electric charge and discharge","evidence",evidence));
+                String question="Give a reason why electric charges accumulated by rubbing insulating surfaces discharge through the human body.";
+                if(!isRepeatedStudyQuestion(question,evidence,history,result)) result.add(Map.of("format","give_reason","question",question,"answer","Rubbing insulating surfaces builds up electric charges. These charges can discharge through the body.","explanation","The note links rubbing insulating surfaces to accumulated electric charges and their discharge through the body.","topic","Electric charge and discharge","evidence",evidence));
                 if(result.size()>=5) break;
                 continue;
             }
@@ -138,7 +140,7 @@ public class AiTutorService {
                     default -> "Define "+subject+".";
                 };
                 String identity=question.toLowerCase(Locale.ROOT);
-                if(!seen.add(identity)) break;
+                if(!seen.add(identity) || isRepeatedStudyQuestion(question,evidence,history,result)) break;
                 String format=switch(rule[1]) {case "formula" -> "formula"; case "components" -> "list"; case "conditions","cause" -> "give_reason"; default -> "definition";};
                 result.add(Map.of("format",format,"question",question,"answer",answer,"explanation","This answer is supported by the uploaded notes.","topic",subject,"evidence",evidence));
                 break;
@@ -146,5 +148,34 @@ public class AiTutorService {
             if(result.size()>=5) break;
         }
         return result;
+    }
+    private boolean isRepeatedStudyQuestion(String question,String evidence,List<com.playbit.dto.Requests.StudyQuestionHistory> history,List<Map<String,Object>> generated) {
+        for(var old:history) {
+            if(old==null) continue;
+            if(similarText(question,old.question(),0.72) || evidenceOverlap(evidence,old.evidence())) return true;
+        }
+        for(var old:generated) {
+            if(similarText(question,Db.str(old,"question"),0.72) || evidenceOverlap(evidence,Db.str(old,"evidence"))) return true;
+        }
+        return false;
+    }
+    private boolean evidenceOverlap(String first,String second) {
+        String a=canonicalStudyText(first),b=canonicalStudyText(second);
+        return a.length()>=24 && b.length()>=24 && (a.contains(b)||b.contains(a)||similarity(a,b)>=0.82);
+    }
+    private boolean similarText(String first,String second,double threshold) {
+        if(second==null || second.isBlank()) return false;
+        String a=canonicalStudyText(first),b=canonicalStudyText(second);
+        return !a.isBlank() && (a.equals(b) || similarity(a,b)>=threshold);
+    }
+    private String canonicalStudyText(String value) {
+        return value==null?"":value.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+"," ").trim().replaceAll("\\s+"," ");
+    }
+    private double similarity(String first,String second) {
+        var a=new HashSet<>(Arrays.asList(first.split("\\s+")));var b=new HashSet<>(Arrays.asList(second.split("\\s+")));
+        var stop=Set.of("the","a","an","is","are","was","were","what","why","how","when","where","which","define","state","explain","give","reason","for","of","to","in","on","by","from","with","and","or","does","do","did","can","could","will","would","should","between","calculate","list","name");
+        a.removeAll(stop);b.removeAll(stop);if(a.isEmpty()||b.isEmpty())return 0.0;
+        var intersection=new HashSet<>(a);intersection.retainAll(b);var union=new HashSet<>(a);union.addAll(b);
+        return (double)intersection.size()/union.size();
     }
 }
