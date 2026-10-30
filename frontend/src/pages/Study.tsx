@@ -7,6 +7,7 @@ import {
 import { useSession } from "../stores/session";
 import { api } from "../services/api";
 import { Button } from "../components/ui/button";
+import { extractStudyFile } from "../lib/study-import";
 
 type ChatMessage = { role: "user" | "assistant"; text: string; hint?: string };
 type Flashcard = { id: string; front: string; back: string; topic: string; dueAt: number; interval: number; ease: number };
@@ -75,11 +76,17 @@ export default function Study() {
 
   async function importFile(file?: File) {
     if (!file) return;
-    if (!/\.(txt|md|csv)$/i.test(file.name)) { setChatError("For now, upload a .txt, .md, or .csv file. You can paste text from a PDF or document below."); return; }
-    if (file.size > 120_000) { setChatError("That file is over 120 KB. Split it into smaller notes or paste the key sections."); return; }
-    const text = await file.text();
-    setData((current) => ({ ...current, title: file.name, notes: clampText(text), cards: makeCards(text) }));
-    setChatError("");
+    if (file.size > 20 * 1024 * 1024) { setChatError("That file is over 20 MB. Reduce its size or split it into smaller files."); return; }
+    setChatError("Reading your file…");
+    try {
+      const extracted = await extractStudyFile(file);
+      const text = clampText(extracted.replace(/\u0000/g, " ").trim());
+      if (!text) throw new Error(`No selectable text was found in “${file.name}”. Scanned documents and images need OCR before upload.`);
+      setData((current) => ({ ...current, title: file.name, notes: text, cards: makeCards(text) }));
+      setChatError("");
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : `Could not read “${file.name}”. Try exporting it to a common document format.`);
+    }
   }
 
   async function sendMessage(event: FormEvent) {
@@ -141,8 +148,8 @@ export default function Study() {
     </div>
 
     <section className="study-source panel">
-      <div className="study-source-head"><div><span className="study-icon"><BookOpenText size={20}/></span><div><strong>{data.title || "Add your study material"}</strong><small>Text, Markdown, or CSV · up to 120 KB</small></div></div>
-        <input ref={fileRef} hidden type="file" accept=".txt,.md,.csv,text/plain,text/markdown,text/csv" onChange={(event) => void importFile(event.target.files?.[0])}/>
+      <div className="study-source-head"><div><span className="study-icon"><BookOpenText size={20}/></span><div><strong>{data.title || "Add your study material"}</strong><small>Any file · auto-reads common documents · up to 20 MB</small></div></div>
+        <input ref={fileRef} hidden type="file" accept="*/*" onChange={(event) => { void importFile(event.target.files?.[0]); event.currentTarget.value = ""; }}/>
         <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload size={16}/> Upload notes</Button>
       </div>
       <textarea aria-label="Paste notes or syllabus" value={data.notes} maxLength={120_000} onChange={(event) => setData((current) => ({ ...current, title: current.title || "Pasted study notes", notes: event.target.value }))} placeholder="Or paste notes / a syllabus here… The tutor will use only this material to answer." />
