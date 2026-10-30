@@ -16,7 +16,8 @@ import org.springframework.stereotype.Service;
 /** Retrieves existing exam questions from public web pages; it never asks an LLM to write questions. */
 @Service
 public class OnlineQuestionSearchService {
-    private static final Pattern QUESTION_START = Pattern.compile("(?i)^(?:(?:question|q)\\.?\\s*)?\\d{1,3}[.)\\]:-]?\\s+|(?:define|state|explain|compare|differentiate|calculate|solve|find|determine|evaluate|simplify|prove|show|derive|identify|describe|give|write|name|list|which|what|why|how|when|where|choose|select|construct|draw|complete|fill)\\b.*");
+    private static final Pattern QUESTION_START = Pattern.compile("(?i)^(?:define|state|explain|compare|differentiate|calculate|solve|find|determine|evaluate|simplify|prove|show|derive|identify|describe|give|write|name|list|which|what|why|how|when|where|choose|select|construct|draw|complete|fill)\\b.*");
+    private static final Pattern OPTION_LINE = Pattern.compile("(?i)^(?:\\(?[a-d]\\)?[.)]|\\(?[1-4]\\)?[.)])\\s+.+$");
     private final ObjectMapper mapper;
     private final String apiKey;
 
@@ -80,7 +81,9 @@ public class OnlineQuestionSearchService {
             sources.add(Map.of("title", truncate(title, 180), "url", url, "domain", domain, "snippet", truncate(snippet, 500)));
 
             String raw = result.path("raw_content").asText("");
-            List<String> candidates = questionLines(raw.isBlank() ? snippet : raw);
+            var candidates = new LinkedHashSet<String>();
+            candidates.addAll(questionLines(raw));
+            candidates.addAll(questionLines(snippet));
             for (String candidate : candidates) {
                 String normalized = canonical(candidate);
                 if (normalized.length() < 20 || !seen.add(normalized)) continue;
@@ -90,7 +93,7 @@ public class OnlineQuestionSearchService {
             if (questions.size() >= 20 || sources.size() >= 8) break;
         }
         String message = questions.isEmpty()
-            ? "No question text was found in the search snippets. Open the linked exam or textbook sources to browse their original questions."
+            ? "No question text could be extracted from these indexed pages. Open the linked exam or textbook sources to view their original questions."
             : "Questions below are excerpts found on the linked pages. Playbit has not generated or rewritten them.";
         return Map.of("query", query, "questions", questions, "sources", sources, "message", message, "source", "web");
     }
@@ -101,13 +104,28 @@ public class OnlineQuestionSearchService {
             .replaceAll("<[^>]+>", " ").replaceAll("&nbsp;", " ").replaceAll("&amp;", "&")
             .replaceAll("[\\t ]+", " ");
         var found = new LinkedHashSet<String>();
-        for (String rawLine : normalized.split("\\n+|(?<=[?])\\s+(?=(?:Q(?:uestion)?\\.?\\s*)?\\d{1,3}[.)]|(?:What|Why|How|Which|When|Where|Define|Explain|Calculate|Solve|Find|State|Show|Prove)\\b)")) {
-            String line = rawLine.trim().replaceAll("^[\\s•*#]+", "").replaceAll("^(?:Q(?:uestion)?\\.?\\s*)?\\d{1,3}[.)\\]:-]\\s*", "");
-            if (line.length() < 20 || line.length() > 700 || !QUESTION_START.matcher(line).matches()) continue;
-            if (!line.endsWith("?") && !line.matches("(?is)^.{20,}\\?$")) {
-                if (!line.matches("(?i)^(define|state|explain|compare|differentiate|calculate|solve|find|determine|evaluate|simplify|prove|show|derive|identify|describe|give|write|name|list|choose|select|construct|draw|complete|fill)\\b.*")) continue;
+        String[] lines = normalized.split("\\n+|(?<=\\?)\\s+(?=(?:(?:Q(?:uestion)?\\.?\\s*)?\\d{1,3}[.)]|What|Why|How|Which|When|Where|Define|Explain|Calculate|Solve|Find|State|Show|Prove)\\b)|(?<=\\.)\\s+(?=\\d{1,3}[.)]\\s+)");
+        for (int i = 0; i < lines.length; i++) {
+            String original = lines[i].trim().replaceAll("^[\\s•*#]+", "");
+            if (original.length() < 20 || original.length() > 700) continue;
+            String stem = original.replaceFirst("(?i)^(?:(?:question|q)\\.?\\s*)?\\d{1,3}[.)\\]:-]\\s*", "").trim();
+            boolean hasQuestionShape = stem.endsWith("?") || stem.matches("(?is).*_{3,}.*") || QUESTION_START.matcher(stem).matches();
+            boolean markLabel = stem.matches("(?is).{20,}\\s*\\[\\s*\\d+\\s*(?:marks?|points?)\\s*].*");
+            boolean followedByOptions = i + 1 < lines.length && OPTION_LINE.matcher(lines[i + 1].trim()).matches();
+
+            String candidate = stem;
+            if (!hasQuestionShape && !markLabel && !followedByOptions) continue;
+            if ((markLabel || followedByOptions) && i + 1 < lines.length) {
+                var parts = new ArrayList<String>();
+                parts.add(stem);
+                int cursor = i + 1;
+                while (cursor < lines.length && parts.size() <= 5 && OPTION_LINE.matcher(lines[cursor].trim()).matches()) {
+                    parts.add(lines[cursor].trim());
+                    cursor++;
+                }
+                if (parts.size() > 1) { candidate = String.join(" ", parts); i = cursor - 1; }
             }
-            found.add(line);
+            if (candidate.length() >= 20 && candidate.length() <= 700) found.add(candidate);
             if (found.size() >= 8) break;
         }
         return List.copyOf(found);
