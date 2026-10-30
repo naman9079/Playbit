@@ -20,6 +20,7 @@ The source is implemented. The Supabase URL and user-supplied public anon key ar
 Vercel serves the Vite frontend. The Java Spring Boot API is a separate service and must be deployed to a host that can run the backend container; pointing a browser at `localhost` will only point back to that visitor’s own computer.
 
 1. In Vercel, connect this GitHub repository and set the project **Root Directory** to `frontend`.
+   The included `frontend/vercel.json` rewrites client-side routes such as `/auth` and `/play` to the Vite app, so direct links and page refreshes work.
 2. In **Settings → Environment Variables**, add these variables to **Production** and **Preview**:
    - `VITE_SUPABASE_URL` — the Supabase project URL.
    - `VITE_SUPABASE_ANON_KEY` — the Supabase anon/publishable key. This is a browser-visible public key; never use a service-role key here.
