@@ -37,9 +37,9 @@ playbit:
     recovery: 20
     bot-daily-limit: 10
   ai:
-    base-url: ${AI_BASE_URL:https://api.openai.com/v1}
+    base-url: ${AI_BASE_URL:https://co.agentrouter.org/v1}
     key: ${AI_API_KEY:}
-    model: ${AI_MODEL:gpt-4.1-mini}
+    model: ${AI_MODEL:gpt-5.6-sol}
     admin-ids: ${AI_ADMIN_IDS:}
   search:
     tavily-key: ${TAVILY_API_KEY:}
