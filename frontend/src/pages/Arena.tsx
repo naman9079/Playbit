@@ -170,6 +170,18 @@ export default function Arena() {
   const remaining = question
     ? Math.max(0, (new Date(question.deadline_at).getTime() - serverNow) / 1000)
     : 0;
+  const secondsToStart = m
+    ? Math.max(
+        0,
+        Math.ceil((new Date(m.started_at).getTime() - serverNow) / 1000),
+      )
+    : 0;
+  const boundaryKey =
+    question?.id ??
+    (m?.status === "active" ? `start:${m.started_at}` : null);
+  const boundaryReached = question
+    ? remaining <= 0
+    : m?.status === "active" && secondsToStart <= 0;
   useEffect(() => {
     function keydown(e: KeyboardEvent) {
       if (!question || accepted || submit.isPending || remaining <= 0) return;
@@ -182,22 +194,6 @@ export default function Arena() {
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
   }, [question, accepted, submit.isPending, remaining]);
-  if (isPending) return <Loading />;
-  if (error) return <ErrorBox error={error} />;
-  if (!m) return null;
-  const me = m.players.find((p: any) => p.user_id === user);
-  const opponent = m.players.find((p: any) => p.user_id !== user);
-  const feedback = m.feedback?.at(-1);
-  const secondsToStart = Math.max(
-    0,
-    Math.ceil((new Date(m.started_at).getTime() - serverNow) / 1000),
-  );
-  const boundaryKey =
-    question?.id ??
-    (m.status === "active" ? `start:${m.started_at}` : null);
-  const boundaryReached = question
-    ? remaining <= 0
-    : m.status === "active" && secondsToStart <= 0;
   useEffect(() => {
     if (!boundaryKey) return;
     if (!boundaryReached) {
@@ -209,6 +205,12 @@ export default function Arena() {
     boundaryRefreshFor.current = boundaryKey;
     void cache.invalidateQueries({ queryKey: ["match", id], exact: true });
   }, [boundaryKey, boundaryReached, cache, id]);
+  if (isPending) return <Loading />;
+  if (error) return <ErrorBox error={error} />;
+  if (!m) return null;
+  const me = m.players.find((p: any) => p.user_id === user);
+  const opponent = m.players.find((p: any) => p.user_id !== user);
+  const feedback = m.feedback?.at(-1);
   return (
     <div className="arena-page">
       <div className="arena-heading">

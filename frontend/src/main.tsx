@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Component, useEffect, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import {
   BrowserRouter,
@@ -30,6 +30,32 @@ const client = new QueryClient({
     mutations: { retry: 0 },
   },
 });
+class AppErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("Playbit screen crashed", error, info.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <main className="empty" role="alert">
+          <h1>This screen hit a problem.</h1>
+          <p>{this.state.error.message}</p>
+          <button onClick={() => window.location.assign("/play")}>
+            Return to Play
+          </button>
+        </main>
+      );
+    }
+    return this.props.children;
+  }
+}
 function Protected() {
   const { session, ready } = useSession();
   const location = useLocation();
@@ -68,35 +94,37 @@ function App() {
     };
   }, [setSession]);
   return (
-    <Routes>
-      <Route element={<Shell />}>
-        <Route index element={<Home />} />
-        <Route path="auth" element={<Auth />} />
-        <Route element={<Protected />}>
-          <Route path="onboarding" element={<Onboarding />} />
-          <Route path="play" element={<Play />} />
-          <Route path="subjects" element={<Play />} />
-          <Route path="room/:id" element={<Room />} />
-          <Route path="arena/:id" element={<Arena />} />
-          <Route path="diagnostic/:id" element={<Arena />} />
-          <Route path="recovery/:id" element={<Arena />} />
-          <Route path="results/:id" element={<Results />} />
-          <Route path="reports/:id" element={<Results />} />
-          <Route path="progress" element={<Progress />} />
-          <Route path="profile" element={<Profile />} />
-          <Route path="leaderboards" element={<Leaderboards />} />
+    <AppErrorBoundary>
+      <Routes>
+        <Route element={<Shell />}>
+          <Route index element={<Home />} />
+          <Route path="auth" element={<Auth />} />
+          <Route element={<Protected />}>
+            <Route path="onboarding" element={<Onboarding />} />
+            <Route path="play" element={<Play />} />
+            <Route path="subjects" element={<Play />} />
+            <Route path="room/:id" element={<Room />} />
+            <Route path="arena/:id" element={<Arena />} />
+            <Route path="diagnostic/:id" element={<Arena />} />
+            <Route path="recovery/:id" element={<Arena />} />
+            <Route path="results/:id" element={<Results />} />
+            <Route path="reports/:id" element={<Results />} />
+            <Route path="progress" element={<Progress />} />
+            <Route path="profile" element={<Profile />} />
+            <Route path="leaderboards" element={<Leaderboards />} />
+          </Route>
+          <Route
+            path="*"
+            element={
+              <div className="empty">
+                <h1>Out of bounds.</h1>
+                <Link to="/">Back to the playground →</Link>
+              </div>
+            }
+          />
         </Route>
-        <Route
-          path="*"
-          element={
-            <div className="empty">
-              <h1>Out of bounds.</h1>
-              <Link to="/">Back to the playground →</Link>
-            </div>
-          }
-        />
-      </Route>
-    </Routes>
+      </Routes>
+    </AppErrorBoundary>
   );
 }
 createRoot(document.getElementById("root")!).render(
