@@ -20,3 +20,5 @@ services:
         value: https://plabit.vercel.app
       - key: TAVILY_API_KEY
         sync: false
+      - key: AI_API_KEY
+        sync: false
