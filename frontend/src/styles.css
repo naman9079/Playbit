@@ -4142,6 +4142,10 @@ td small {
 .study-feedback { display:flex; align-items:center; gap:8px; width:100%; padding:12px; border-radius:10px; font-size:13px; }
 .study-feedback.correct { color:#d8f7ad; background:#263326; }
 .study-feedback.wrong { color:#f6c9d4; background:#34232c; }
+.study-feedback small { color:#c2bfd1; line-height:1.6; }
+.study-evidence { margin:12px 0; color:#bcb5ce; font-size:12px; }
+.study-evidence summary { width:max-content; cursor:pointer; color:#c5adff; }
+.study-evidence p { padding:10px 12px; color:#dfdbea; background:#191923; border-left:2px solid #a780ff; border-radius:0 8px 8px 0; line-height:1.6; }
 .study-flashcard { max-width:740px; min-height:260px; display:flex; flex-direction:column; align-items:center; justify-content:center; margin:18px auto 0; padding:28px; text-align:center; background:linear-gradient(135deg,#1d1b29,#191923); border:1px solid #363345; border-radius:18px; }
 .study-flashcard h2 { min-height:80px; display:grid; place-items:center; }
 .study-flashcard > small { display:flex; align-items:center; gap:5px; margin-top:17px; color:#9292a6; }

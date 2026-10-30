@@ -20,4 +20,5 @@ public class Requests {
     public record Recovery(@NotBlank String matchId) {}
     public record Hint(@NotBlank String matchId, @NotBlank String questionId) {}
     public record StudyChat(@NotBlank @Size(max=1200) String question, @Size(max=24000) String context) {}
+    public record StudyQuiz(@NotBlank @Size(max=24000) String context, @Size(max=10) java.util.List<String> focusTopics) {}
 }

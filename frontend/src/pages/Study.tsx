@@ -11,28 +11,13 @@ import { extractStudyFile } from "../lib/study-import";
 
 type ChatMessage = { role: "user" | "assistant"; text: string; hint?: string };
 type Flashcard = { id: string; front: string; back: string; topic: string; dueAt: number; interval: number; ease: number };
+type StudyQuestion = { question: string; answer: string; explanation: string; topic: string; evidence: string };
 type Mastery = Record<string, { correct: number; total: number }>;
-type StudyData = { title: string; notes: string; messages: ChatMessage[]; cards: Flashcard[]; mastery: Mastery };
-const empty: StudyData = { title: "", notes: "", messages: [], cards: [], mastery: {} };
-const storeKey = (userId: string) => `playbit-study-v1-${userId}`;
+type StudyData = { title: string; notes: string; messages: ChatMessage[]; cards: Flashcard[]; questions: StudyQuestion[]; mastery: Mastery };
+const empty: StudyData = { title: "", notes: "", messages: [], cards: [], questions: [], mastery: {} };
+const storeKey = (userId: string) => `playbit-study-v2-${userId}`;
+const legacyStoreKey = (userId: string) => `playbit-study-v1-${userId}`;
 const clampText = (value: string) => value.slice(0, 120_000);
-
-function topicFor(sentence: string) {
-  const words = sentence.toLowerCase().match(/[a-z]{4,}/g) ?? [];
-  const ignored = new Set(["this", "that", "with", "from", "into", "have", "when", "where", "which", "their", "there", "these", "those", "because", "using", "used", "than", "then", "what", "your", "will", "each", "also"]);
-  const counts = new Map<string, number>();
-  words.filter((word) => !ignored.has(word)).forEach((word) => counts.set(word, (counts.get(word) ?? 0) + 1));
-  return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([word]) => word).join(" · ") || "General review";
-}
-
-function makeCards(notes: string): Flashcard[] {
-  return notes.split(/(?<=[.!?])\s+|\n+/).map((part) => part.trim()).filter((part) => part.length >= 32 && part.length <= 360)
-    .slice(0, 100).flatMap((sentence, index) => {
-      const candidates = sentence.match(/[A-Za-z][A-Za-z-]{3,}/g) ?? [];
-      const answer = candidates.sort((a, b) => b.length - a.length)[0];
-      return answer ? [{ id: `${index}-${sentence.slice(0, 18)}`, front: sentence.replace(new RegExp(answer, "i"), "________"), back: answer, topic: topicFor(sentence), dueAt: Date.now(), interval: 0, ease: 2.5 }] : [];
-    });
-}
 
 export default function Study() {
   const session = useSession((state) => state.session);
@@ -43,9 +28,11 @@ export default function Study() {
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [chatError, setChatError] = useState("");
-  const [quiz, setQuiz] = useState<{ prompt: string; answer: string; topic: string } | null>(null);
+  const [quiz, setQuiz] = useState<StudyQuestion | null>(null);
   const [quizAnswer, setQuizAnswer] = useState("");
   const [quizChecked, setQuizChecked] = useState(false);
+  const [quizBusy, setQuizBusy] = useState(false);
+  const [deckBusy, setDeckBusy] = useState(false);
   const [cardShown, setCardShown] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -54,7 +41,13 @@ export default function Study() {
     if (!userId) { setData(empty); setReady(true); return; }
     try {
       const saved = localStorage.getItem(storeKey(userId));
-      setData(saved ? { ...empty, ...JSON.parse(saved) } : empty);
+      if (saved) setData({ ...empty, ...JSON.parse(saved) });
+      else {
+        const legacy = localStorage.getItem(legacyStoreKey(userId));
+        const migrated = legacy ? { ...empty, ...JSON.parse(legacy), cards: [], questions: [], mastery: {} } : empty;
+        setData(migrated);
+        if (legacy) localStorage.setItem(storeKey(userId), JSON.stringify(migrated));
+      }
     } catch { setData(empty); }
     setReady(true);
   }, [userId]);
@@ -82,7 +75,7 @@ export default function Study() {
       const extracted = await extractStudyFile(file);
       const text = clampText(extracted.replace(/\u0000/g, " ").trim());
       if (!text) throw new Error(`No selectable text was found in “${file.name}”. Scanned documents and images need OCR before upload.`);
-      setData((current) => ({ ...current, title: file.name, notes: text, cards: makeCards(text) }));
+      setData((current) => ({ ...current, title: file.name, notes: text, messages: [], cards: [], questions: [], mastery: {} }));
       setChatError("");
     } catch (error) {
       setChatError(error instanceof Error ? error.message : `Could not read “${file.name}”. Try exporting it to a common document format.`);
@@ -105,24 +98,51 @@ export default function Study() {
     } finally { setBusy(false); }
   }
 
-  function nextQuiz() {
-    const sentences = data.notes.split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter((s) => s.length >= 32 && s.length <= 360);
-    if (!sentences.length) { setChatError("Add some notes first, then generate a quiz."); return; }
-    const ordered = [...sentences].sort((a, b) => {
-      const aScore = data.mastery[topicFor(a)]; const bScore = data.mastery[topicFor(b)];
-      return (aScore ? aScore.correct / Math.max(1, aScore.total) : -1) - (bScore ? bScore.correct / Math.max(1, bScore.total) : -1);
+  async function generateQuestions() {
+    const generated = await api<{ questions: StudyQuestion[] }>("/study/questions", "POST", {
+      context: data.notes.slice(0, 24_000),
+      focusTopics: topics.slice(0, 3).map(([topic]) => topic),
     });
-    const sentence = ordered[Math.floor(Math.random() * Math.min(ordered.length, 5))];
-    const words = sentence.match(/[A-Za-z][A-Za-z-]{3,}/g) ?? [];
-    const answer = words.sort((a, b) => b.length - a.length)[0];
-    if (!answer) return;
-    setQuiz({ prompt: sentence.replace(new RegExp(answer, "i"), "________"), answer, topic: topicFor(sentence) });
-    setQuizAnswer(""); setQuizChecked(false); setChatError(""); setTab("quiz");
+    return generated.questions;
+  }
+
+  async function nextQuiz() {
+    if (quizBusy) return;
+    setChatError("");
+    let current = data.questions;
+    if (!current.length) {
+      if (!data.notes.trim()) { setChatError("Add notes first so the quiz can use facts from your material."); return; }
+      setQuizBusy(true);
+      try { current = await generateQuestions(); }
+      catch (error) { setChatError(error instanceof Error ? error.message : "Could not create a useful exam question from these notes."); return; }
+      finally { setQuizBusy(false); }
+    }
+    const [next, ...remaining] = current;
+    if (!next) { setChatError("No clear exam questions could be made from these notes. Add definitions, formulas, or factual explanations and try again."); return; }
+    setQuiz(next); setQuizAnswer(""); setQuizChecked(false); setTab("quiz");
+    setData((previous) => ({ ...previous, questions: remaining }));
+  }
+
+  async function generateFlashcards() {
+    if (deckBusy || !data.notes.trim()) return;
+    setDeckBusy(true); setChatError("");
+    try {
+      const questions = await generateQuestions();
+      if (!questions.length) throw new Error("These notes do not have enough clear facts to make useful question-and-answer cards.");
+      const cards = questions.map((item, index) => ({
+        id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+        front: item.question, back: item.answer, topic: item.topic, dueAt: Date.now(), interval: 0, ease: 2.5,
+      }));
+      setData((previous) => ({ ...previous, cards: [...previous.cards, ...cards] }));
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : "Could not make flashcards from these notes.");
+    } finally { setDeckBusy(false); }
   }
 
   function scoreQuiz() {
     if (!quiz) return;
-    const correct = quizAnswer.trim().toLowerCase() === quiz.answer.toLowerCase();
+    const normalize = (value: string) => value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
+    const correct = normalize(quizAnswer) === normalize(quiz.answer);
     setQuizChecked(true);
     setData((current) => {
       const previous = current.mastery[quiz.topic] ?? { correct: 0, total: 0 };
@@ -152,8 +172,8 @@ export default function Study() {
         <input ref={fileRef} hidden type="file" accept="*/*" onChange={(event) => { void importFile(event.target.files?.[0]); event.currentTarget.value = ""; }}/>
         <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload size={16}/> Upload notes</Button>
       </div>
-      <textarea aria-label="Paste notes or syllabus" value={data.notes} maxLength={120_000} onChange={(event) => setData((current) => ({ ...current, title: current.title || "Pasted study notes", notes: event.target.value }))} placeholder="Or paste notes / a syllabus here… The tutor will use only this material to answer." />
-      <div className="study-source-foot"><span>{data.notes.length.toLocaleString()} / 120,000 characters · saved in this browser for your account</span>{data.notes && <button className="study-text-button" onClick={() => { setData((current) => ({ ...current, title: "", notes: "", cards: [], messages: [] })); setQuiz(null); }}>Clear material</button>}</div>
+      <textarea aria-label="Paste notes or syllabus" value={data.notes} maxLength={120_000} onChange={(event) => { const notes = event.target.value; setData((current) => ({ ...current, title: current.title || "Pasted study notes", notes, cards: [], questions: [], mastery: {} })); setQuiz(null); }} placeholder="Or paste notes / a syllabus here… The tutor will use only this material to answer." />
+      <div className="study-source-foot"><span>{data.notes.length.toLocaleString()} / 120,000 characters · saved in this browser for your account</span>{data.notes && <button className="study-text-button" onClick={() => { setData((current) => ({ ...current, title: "", notes: "", cards: [], questions: [], mastery: {}, messages: [] })); setQuiz(null); }}>Clear material</button>}</div>
     </section>
 
     <div className="study-tabs" role="tablist" aria-label="Study tools">
@@ -173,9 +193,9 @@ export default function Study() {
       {!data.notes && <small className="study-privacy"><FileText size={13}/> Add material to enable note-grounded answers.</small>}
     </section>}
 
-    {tab === "quiz" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><Brain size={21}/></span><div><strong>Adaptive recall quiz</strong><small>Questions focus on topics with the lowest accuracy first.</small></div></div>{quiz ? <div className="study-question"><span className="eyebrow">TOPIC · {quiz.topic}</span><h2>{quiz.prompt}</h2><form onSubmit={(event) => { event.preventDefault(); scoreQuiz(); }}><input autoComplete="off" value={quizAnswer} onChange={(event) => setQuizAnswer(event.target.value)} placeholder="Type the missing term" disabled={quizChecked}/>{quizChecked ? <div className={`study-feedback ${quizAnswer.trim().toLowerCase() === quiz.answer.toLowerCase() ? "correct" : "wrong"}`}>{quizAnswer.trim().toLowerCase() === quiz.answer.toLowerCase() ? <Check size={17}/> : <Lightbulb size={17}/>} {quizAnswer.trim().toLowerCase() === quiz.answer.toLowerCase() ? "Correct — nice recall." : `The answer is ${quiz.answer}. Read the sentence again and try to explain why.`}</div> : <Button type="submit" disabled={!quizAnswer.trim()}>Check answer <ChevronRight size={16}/></Button>}</form><Button variant="outline" onClick={nextQuiz}>Next question <ChevronRight size={16}/></Button></div> : <div className="study-empty"><Brain size={28}/><h2>Practice what you just studied.</h2><p>We make quick recall questions from your notes and prioritize weaker topics as you answer.</p><Button onClick={nextQuiz} disabled={!data.notes}>Generate a question <ChevronRight size={17}/></Button></div>}</section>}
+    {tab === "quiz" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><Brain size={21}/></span><div><strong>Exam-style practice</strong><small>Questions are grounded in your notes and adapt to weaker topics.</small></div></div>{quiz ? <div className="study-question"><span className="eyebrow">TOPIC · {quiz.topic}</span><h2>{quiz.question}</h2><form onSubmit={(event) => { event.preventDefault(); scoreQuiz(); }}><input autoComplete="off" value={quizAnswer} onChange={(event) => setQuizAnswer(event.target.value)} placeholder="Write your answer" disabled={quizChecked}/>{quizChecked ? <div className={`study-feedback ${quizAnswer.trim().toLocaleLowerCase() === quiz.answer.trim().toLocaleLowerCase() ? "correct" : "wrong"}`}>{quizAnswer.trim().toLocaleLowerCase() === quiz.answer.trim().toLocaleLowerCase() ? <Check size={17}/> : <Lightbulb size={17}/>}<span>{quizAnswer.trim().toLocaleLowerCase() === quiz.answer.trim().toLocaleLowerCase() ? "Correct." : `Review this answer: ${quiz.answer}`}<br/><small>{quiz.explanation}</small></span></div> : <Button type="submit" disabled={!quizAnswer.trim()}>Check answer <ChevronRight size={16}/></Button>}</form><details className="study-evidence"><summary>Show the supporting note</summary><p>{quiz.evidence}</p></details><Button variant="outline" disabled={quizBusy} onClick={() => void nextQuiz()}>{quizBusy ? "Preparing question…" : "Next question"} <ChevronRight size={16}/></Button></div> : <div className="study-empty"><Brain size={28}/><h2>Practice what you just studied.</h2><p>We’ll ask clear exam-style questions only when your notes contain enough factual material to support them.</p><Button onClick={() => void nextQuiz()} disabled={!data.notes || quizBusy}>{quizBusy ? "Preparing question…" : "Generate a question"} <ChevronRight size={17}/></Button></div>}</section>}
 
-    {tab === "cards" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><RotateCcw size={21}/></span><div><strong>Spaced-repetition cards</strong><small>Rate recall to schedule the next review.</small></div><span className="study-online">{dueCards.length} DUE</span></div>{dueCards.length ? <div className="study-flashcard"><span className="eyebrow">{dueCards[0].topic}</span><h2>{cardShown ? dueCards[0].back : dueCards[0].front}</h2>{cardShown ? <div className="study-ratings">{([["again", "Again"], ["hard", "Hard"], ["good", "Good"], ["easy", "Easy"]] as const).map(([rating, label]) => <button key={rating} onClick={() => reviewCard(rating)}>{label}</button>)}</div> : <Button onClick={() => setCardShown(true)}>Show answer <ChevronRight size={16}/></Button>}<small><Clock3 size={13}/> {dueCards.length} card{dueCards.length === 1 ? "" : "s"} ready to review</small></div> : <div className="study-empty"><RotateCcw size={28}/><h2>{data.cards.length ? "All caught up." : "Build your first review deck."}</h2><p>{data.cards.length ? "Come back when the next card is due." : "Add notes with complete sentences. We’ll turn key terms into recall cards."}</p><Button variant="outline" disabled={!data.notes} onClick={() => setData((current) => ({ ...current, cards: makeCards(current.notes) }))}>{data.cards.length ? "Rebuild deck from notes" : "Create flashcards"} <ChevronRight size={17}/></Button></div>}</section>}
+    {tab === "cards" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><RotateCcw size={21}/></span><div><strong>Spaced-repetition cards</strong><small>Rate recall to schedule the next review.</small></div><span className="study-online">{dueCards.length} DUE</span></div>{dueCards.length ? <div className="study-flashcard"><span className="eyebrow">{dueCards[0].topic}</span><h2>{cardShown ? dueCards[0].back : dueCards[0].front}</h2>{cardShown ? <div className="study-ratings">{([["again", "Again"], ["hard", "Hard"], ["good", "Good"], ["easy", "Easy"]] as const).map(([rating, label]) => <button key={rating} onClick={() => reviewCard(rating)}>{label}</button>)}</div> : <Button onClick={() => setCardShown(true)}>Show answer <ChevronRight size={16}/></Button>}<small><Clock3 size={13}/> {dueCards.length} card{dueCards.length === 1 ? "" : "s"} ready to review</small></div> : <div className="study-empty"><RotateCcw size={28}/><h2>{data.cards.length ? "All caught up." : "Build your first review deck."}</h2><p>{data.cards.length ? "Come back when the next card is due." : "Cards are written as real study questions with note-backed answers."}</p><Button variant="outline" disabled={!data.notes || deckBusy} onClick={() => void generateFlashcards()}>{deckBusy ? "Creating cards…" : data.cards.length ? "Add more study cards" : "Create flashcards"} <ChevronRight size={17}/></Button></div>}</section>}
 
     {tab === "heatmap" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><Flame size={21}/></span><div><strong>Your weak-topic heatmap</strong><small>Built from your answers to note-based quizzes.</small></div></div>{topics.length ? <div className="study-heatmap">{topics.map(([topic, score]) => { const accuracy = Math.round((score.correct / Math.max(1, score.total)) * 100); const level = accuracy < 40 ? "hot" : accuracy < 70 ? "warm" : "cool"; return <div className={`study-topic ${level}`} key={topic}><div><strong>{topic}</strong><span>{accuracy}%</span></div><div className="mastery-track"><div style={{ width: `${accuracy}%` }}/></div><small>{score.correct} correct of {score.total} · {level === "hot" ? "Review this next" : level === "warm" ? "Building confidence" : "Strong recall"}</small></div>; })}</div> : <div className="study-empty"><Flame size={28}/><h2>Your map starts with a few answers.</h2><p>Take adaptive quiz questions to see which concepts need another look.</p><Button onClick={nextQuiz} disabled={!data.notes}>Start a quick quiz <ChevronRight size={17}/></Button></div>}</section>}
 
