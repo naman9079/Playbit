@@ -4179,3 +4179,13 @@ td small {
 .study-choice-options button:hover, .study-choice-options button.selected { color:#efe7ff; background:#302640; border-color:#b08cff; }
 .study-choice-options button:disabled { cursor:default; opacity:.8; }
 @media (max-width:650px) { .study-choice-options { grid-template-columns:1fr; } }
+.study-online-search { display:flex; align-items:stretch; gap:10px; margin:18px 0 22px; }
+.study-online-search input { flex:1; min-width:0; min-height:48px; padding:12px 15px; color:#f1eff9; background:#101019; border:1px solid #383746; border-radius:11px; }
+.study-search-note { color:#aaa7bc; line-height:1.65; }
+.study-question-source { color:#aaa7bc; font-size:13px; }
+.study-question-source a, .study-online-sources a { color:#c5a7ff; text-decoration:underline; text-underline-offset:3px; }
+.study-online-sources { display:grid; gap:10px; margin-top:22px; }
+.study-online-sources > strong { margin-bottom:3px; }
+.study-online-sources a { display:grid; gap:5px; padding:13px; background:#191923; border:1px solid #373646; border-radius:10px; text-decoration:none; }
+.study-online-sources a small { color:#aaa7bc; line-height:1.5; }
+@media (max-width:650px) { .study-online-search { flex-direction:column; } .study-online-search .button { width:100%; } }

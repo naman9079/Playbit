@@ -9,8 +9,8 @@ import com.playbit.repository.*;
 import com.playbit.service.*;
 @RestController @RequestMapping("/api")
 public class ApiController {
-    private final Db db;private final SubjectRepository subjects;private final ProfileService profiles;private final MatchService matches;private final MatchmakingService multiplayer;private final ReportService reports;private final AiTutorService ai;private final CurriculumService curriculum;
-    public ApiController(Db db,SubjectRepository subjects,ProfileService profiles,MatchService matches,MatchmakingService multiplayer,ReportService reports,AiTutorService ai,CurriculumService curriculum) {this.db=db;this.subjects=subjects;this.profiles=profiles;this.matches=matches;this.multiplayer=multiplayer;this.reports=reports;this.ai=ai;this.curriculum=curriculum;}
+    private final Db db;private final SubjectRepository subjects;private final ProfileService profiles;private final MatchService matches;private final MatchmakingService multiplayer;private final ReportService reports;private final AiTutorService ai;private final CurriculumService curriculum;private final OnlineQuestionSearchService onlineQuestions;
+    public ApiController(Db db,SubjectRepository subjects,ProfileService profiles,MatchService matches,MatchmakingService multiplayer,ReportService reports,AiTutorService ai,CurriculumService curriculum,OnlineQuestionSearchService onlineQuestions) {this.db=db;this.subjects=subjects;this.profiles=profiles;this.matches=matches;this.multiplayer=multiplayer;this.reports=reports;this.ai=ai;this.curriculum=curriculum;this.onlineQuestions=onlineQuestions;}
     private UUID user(Jwt jwt) {return UUID.fromString(jwt.getSubject());}
     @GetMapping("/health") Object health() {return Map.of("status","ok");}
     @GetMapping("/subjects") Object subjects() {return subjects.findAll();}
@@ -52,5 +52,5 @@ public class ApiController {
     @PostMapping("/ai/reports/{id}") Object recommend(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id) {return ai.recommendations(user(jwt),id);}
     @PostMapping("/ai/questions/generate") Object generate(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.Start request) {return ai.candidates(user(jwt),request.subjectId());}
     @PostMapping("/study/chat") Object studyChat(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.StudyChat request) {return ai.studyChat(user(jwt),request.question(),request.context());}
-    @PostMapping("/study/questions") Object studyQuestions(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.StudyQuiz request) {return ai.studyQuestions(user(jwt),request.context(),request.focusTopics(),request.recentQuestions());}
+    @PostMapping("/study/online-questions") Object onlineQuestions(@Valid @RequestBody Requests.OnlineQuestionSearch request) {return onlineQuestions.search(request.query(),request.seenQuestions());}
 }

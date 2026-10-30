@@ -12,6 +12,7 @@ services:
       AI_API_KEY: ${AI_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-gpt-4.1-mini}
       AI_ADMIN_IDS: ${AI_ADMIN_IDS:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
     ports: ["8080:8080"]
     restart: unless-stopped
   frontend:

@@ -18,3 +18,5 @@ services:
         value: https://wwekwmfjckgghbewptly.supabase.co
       - key: CORS_ORIGINS
         value: https://plabit.vercel.app
+      - key: TAVILY_API_KEY
+        sync: false

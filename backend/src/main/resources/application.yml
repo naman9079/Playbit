@@ -41,3 +41,5 @@ playbit:
     key: ${AI_API_KEY:}
     model: ${AI_MODEL:gpt-4.1-mini}
     admin-ids: ${AI_ADMIN_IDS:}
+  search:
+    tavily-key: ${TAVILY_API_KEY:}

@@ -65,7 +65,7 @@ public class AiTutorService {
     public Map<String,Object> studyChat(UUID user,String question,String context) {
         String safeContext=context==null?"":context.substring(0,Math.min(context.length(),24000));
         try {
-            var result=ask("You are Playbit's patient study tutor. Answer only from the supplied notes. If the notes do not contain the answer, say so clearly and ask one Socratic guiding question. Keep the answer concise and end with one helpful question. Return JSON {\"answer\": string, \"hint\": string}.",Map.of("question",question,"notes",safeContext,"language",db.one("select language from profiles where id=?",user).get("language")));
+            var result=ask("You are Playbit's patient study tutor. Answer only from the supplied notes. If the notes do not contain the answer, say so clearly and ask one Socratic guiding question. Keep the answer concise and end with one helpful question. Do not create, paraphrase, or generate quizzes, exam questions, or flashcards from the notes; if asked for practice questions, direct the student to Playbit's Questions from the web tab. Return JSON {\"answer\": string, \"hint\": string}.",Map.of("question",question,"notes",safeContext,"language",db.one("select language from profiles where id=?",user).get("language")));
             String answer=result.path("answer").asText(); String hint=result.path("hint").asText();
             if(answer.isBlank() || answer.length()>4000) throw new IllegalArgumentException();
             return Map.of("answer",answer,"hint",hint,"source","ai");
@@ -76,113 +76,5 @@ public class AiTutorService {
                 .limit(3).toList();
             return Map.of("answer",sentences.isEmpty()?"I couldn't find that in the uploaded notes. Try asking with a keyword from the syllabus, or add more material.":String.join(" ",sentences),"hint","Which key term in your question should we look for in the notes?","source","notes-search");
         }
-    }
-    public Map<String,Object> studyQuestions(UUID user,String context,List<String> focusTopics,List<com.playbit.dto.Requests.StudyQuestionHistory> recentQuestions) {
-        String notes=context==null?"":context.substring(0,Math.min(context.length(),24000));
-        var history=recentQuestions==null?List.<com.playbit.dto.Requests.StudyQuestionHistory>of():recentQuestions.stream().filter(Objects::nonNull).toList();
-        try {
-            var generated=ask("You are an experienced international school exam setter. Create up to 5 concise, useful assessment questions using only facts explicitly present in this section of the uploaded material. Mix appropriate formats found across school and standardized exams worldwide: definition, give_reason, explanation, comparison, calculation, formula, list, short_answer, multiple_choice, true_false, fill_blank, case_study, assertion_reason. Choose formats that actually fit the supplied facts; vary formats when possible, but never force an unsuitable one. MCQ and assertion_reason must include exactly 4 distinct options and answer must exactly match one option. True/false must include exactly [True, False] and answer exactly one. fill_blank must include one meaningful blank marker like ______. case_study must include the short source-based scenario and its question in the question field. Use familiar paper wording such as Define, Give a reason, Explain, Differentiate, State, Calculate, Choose the correct option, or Read the case and answer. Every item must stand alone, name the exact concept, and be answerable from this section. Do not repeat, paraphrase, or retest any question or fact in recentQuestions. Select different facts/evidence; if no distinct fact remains, return fewer questions. Never invent facts, distractors that are misleading, or knowledge absent from the material. Do not use chatty prompts or unresolved references such as these experiences/this phenomenon. Return format, question, options (empty array for non-choice), answer, explanation, topic, and evidence (an exact supporting quote). JSON only: {\"questions\":[{\"format\":\"...\",\"question\":\"...\",\"options\":[],\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\",\"evidence\":\"...\"}]}.",Map.of("notes",notes,"focusTopics",focusTopics==null?List.of():focusTopics,"recentQuestions",history,"language",db.one("select language from profiles where id=?",user).get("language")),3000);
-            var questions=validatedStudyQuestions(generated.path("questions"),notes,history);
-            if(!questions.isEmpty()) return Map.of("questions",questions,"source","ai");
-        } catch(Exception ignored) { /* Use only conservative, note-backed templates below. */ }
-        var questions=templateStudyQuestions(notes,history);
-        if(questions.isEmpty()) return Map.of("questions",List.of(),"source","no-new-questions","message",history.isEmpty()?"This section doesn't contain enough clear facts for an exam question.":"You've already practiced the distinct exam questions supported by this section.");
-        return Map.of("questions",questions,"source","verified-notes-template");
-    }
-    private List<Map<String,Object>> validatedStudyQuestions(com.fasterxml.jackson.databind.JsonNode items,String notes,List<com.playbit.dto.Requests.StudyQuestionHistory> history) {
-        var result=new ArrayList<Map<String,Object>>();var seen=new HashSet<String>();
-        if(!items.isArray()) return result;
-        for(var item:items) {
-            String question=item.path("question").asText("").trim();String answer=item.path("answer").asText("").trim();
-            String explanation=item.path("explanation").asText("").trim();String topic=item.path("topic").asText("").trim();String evidence=item.path("evidence").asText("").trim();
-            String format=item.path("format").asText("short_answer").toLowerCase(Locale.ROOT).replace(' ','_');
-            var options=new ArrayList<String>();if(item.path("options").isArray()) item.path("options").forEach(option->{String value=option.asText("").trim();if(!value.isBlank()) options.add(value);});
-            String lower=question.toLowerCase(Locale.ROOT);
-            boolean examWording=lower.matches("^(define|state|explain|compare|calculate|what|why|how|when|where|which|name|list|identify|describe|give|write|derive|find|choose|read|select|mark|complete|fill|true|false|assertion|case study)\\b.*");
-            boolean grounded=evidence.length()>=12 && notes.toLowerCase(Locale.ROOT).contains(evidence.toLowerCase(Locale.ROOT));
-            boolean unresolvedReference=lower.matches(".*\\b(this|that|these|those|such|above|following|previous|mentioned|given)\\b.*") || lower.matches(".*\\b(it|they|them|experiences?|phenomena|things|events)\\b.*") || lower.contains("reason for");
-            String identity=lower.replaceAll("[^a-z0-9]+","");
-            boolean validOptions=switch(format) {
-                case "multiple_choice","assertion_reason" -> options.size()==4 && new HashSet<>(options.stream().map(v->v.toLowerCase(Locale.ROOT)).toList()).size()==4 && options.stream().anyMatch(v->v.equalsIgnoreCase(answer));
-                case "true_false" -> options.size()==2 && options.get(0).equalsIgnoreCase("true") && options.get(1).equalsIgnoreCase("false") && (answer.equalsIgnoreCase("true")||answer.equalsIgnoreCase("false"));
-                case "fill_blank" -> question.matches("(?s).*_{3,}.*");
-                default -> options.isEmpty();
-            };
-            if(question.length()<12 || question.length()>900 || answer.isBlank() || answer.length()>1200 || explanation.length()>1800 || topic.isBlank() || topic.length()>100 || !Set.of("definition","give_reason","explanation","comparison","calculation","formula","list","short_answer","multiple_choice","true_false","fill_blank","case_study","assertion_reason").contains(format) || !validOptions || !examWording || !grounded || unresolvedReference || lower.matches(".*\\b(ever tried|your opinion|do you think|have you ever)\\b.*") || !seen.add(identity) || isRepeatedStudyQuestion(question,evidence,history,result)) continue;
-            result.add(Map.of("format",format,"question",question,"options",options,"answer",answer,"explanation",explanation,"topic",topic,"evidence",evidence));
-            if(result.size()==5) break;
-        }
-        return result;
-    }
-    private List<Map<String,Object>> templateStudyQuestions(String notes,List<com.playbit.dto.Requests.StudyQuestionHistory> history) {
-        var result=new ArrayList<Map<String,Object>>();var seen=new HashSet<String>();
-        var patterns=List.of(
-            new String[]{"(?i)^(?:the )?formula for (.{2,80}?)\\s+is\\s+(.{3,200})$","formula"},
-            new String[]{"(?i)^(.{2,80}?)\\s+consists of\\s+(.{8,250})$","components"},
-            new String[]{"(?i)^(.{2,80}?)\\s+occurs when\\s+(.{8,250})$","conditions"},
-            new String[]{"(?i)^(.{2,80}?)\\s+is caused by\\s+(.{8,250})$","cause"},
-            new String[]{"(?i)^(.{2,80}?)\\s+(?:is defined as|are defined as|is|are|means|refers to)\\s+(.{12,300})$","definition"}
-        );
-        String[] sentences=notes.split("(?<=[.!?])\\s+|\\r?\\n+");
-        for(String raw:sentences) {
-            String evidence=raw.replaceAll("^[\\s•*#\\-]+","").trim().replaceAll("[.!?]+$","").trim();
-            if(evidence.length()<24 || evidence.length()>360 || evidence.matches("(?i)^(have you|do you|what do you|in my opinion|i think)\\b.*")) continue;
-            if(evidence.matches("(?i)^the reason for (these|those|such) experiences is .+") && evidence.toLowerCase(Locale.ROOT).contains("discharge of electric charges through") && evidence.toLowerCase(Locale.ROOT).contains("rubbing of insulating surfaces")) {
-                String question="Give a reason why electric charges accumulated by rubbing insulating surfaces discharge through the human body.";
-                if(!isRepeatedStudyQuestion(question,evidence,history,result)) result.add(Map.of("format","give_reason","question",question,"answer","Rubbing insulating surfaces builds up electric charges. These charges can discharge through the body.","explanation","The note links rubbing insulating surfaces to accumulated electric charges and their discharge through the body.","topic","Electric charge and discharge","evidence",evidence));
-                if(result.size()>=5) break;
-                continue;
-            }
-            for(var rule:patterns) {
-                var match=java.util.regex.Pattern.compile(rule[0]).matcher(evidence);
-                if(!match.matches()) continue;
-                String subject=match.group(1).trim().replaceAll("(?i)^(the|a|an)\\s+","");
-                String answer=match.group(2).trim();
-                if(subject.split("\\s+").length>10 || answer.length()<3 || subject.matches("(?i)^(i|you|we|they|he|she|it|this|that|there|these|those|have|do|does|did)$") || subject.matches("(?i).*(\\bthis\\b|\\bthat\\b|\\bthese\\b|\\bthose\\b|\\bexperience(s)?\\b|\\bphenomenon\\b|\\breason for\\b|\\bit\\b|\\bthey\\b).*$")) continue;
-                String question=switch(rule[1]) {
-                    case "formula" -> "State the formula for "+subject+".";
-                    case "components" -> "List the main components of "+subject+".";
-                    case "conditions" -> "Under what condition does "+subject+" occur?";
-                    case "cause" -> "What causes "+subject+"?";
-                    default -> "Define "+subject+".";
-                };
-                String identity=question.toLowerCase(Locale.ROOT);
-                if(!seen.add(identity) || isRepeatedStudyQuestion(question,evidence,history,result)) break;
-                String format=switch(rule[1]) {case "formula" -> "formula"; case "components" -> "list"; case "conditions","cause" -> "give_reason"; default -> "definition";};
-                result.add(Map.of("format",format,"question",question,"answer",answer,"explanation","This answer is supported by the uploaded notes.","topic",subject,"evidence",evidence));
-                break;
-            }
-            if(result.size()>=5) break;
-        }
-        return result;
-    }
-    private boolean isRepeatedStudyQuestion(String question,String evidence,List<com.playbit.dto.Requests.StudyQuestionHistory> history,List<Map<String,Object>> generated) {
-        for(var old:history) {
-            if(old==null) continue;
-            if(similarText(question,old.question(),0.72) || evidenceOverlap(evidence,old.evidence())) return true;
-        }
-        for(var old:generated) {
-            if(similarText(question,Db.str(old,"question"),0.72) || evidenceOverlap(evidence,Db.str(old,"evidence"))) return true;
-        }
-        return false;
-    }
-    private boolean evidenceOverlap(String first,String second) {
-        String a=canonicalStudyText(first),b=canonicalStudyText(second);
-        return a.length()>=24 && b.length()>=24 && (a.contains(b)||b.contains(a)||similarity(a,b)>=0.82);
-    }
-    private boolean similarText(String first,String second,double threshold) {
-        if(second==null || second.isBlank()) return false;
-        String a=canonicalStudyText(first),b=canonicalStudyText(second);
-        return !a.isBlank() && (a.equals(b) || similarity(a,b)>=threshold);
-    }
-    private String canonicalStudyText(String value) {
-        return value==null?"":value.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+"," ").trim().replaceAll("\\s+"," ");
-    }
-    private double similarity(String first,String second) {
-        var a=new HashSet<>(Arrays.asList(first.split("\\s+")));var b=new HashSet<>(Arrays.asList(second.split("\\s+")));
-        var stop=Set.of("the","a","an","is","are","was","were","what","why","how","when","where","which","define","state","explain","give","reason","for","of","to","in","on","by","from","with","and","or","does","do","did","can","could","will","would","should","between","calculate","list","name");
-        a.removeAll(stop);b.removeAll(stop);if(a.isEmpty()||b.isEmpty())return 0.0;
-        var intersection=new HashSet<>(a);intersection.retainAll(b);var union=new HashSet<>(a);union.addAll(b);
-        return (double)intersection.size()/union.size();
     }
 }
