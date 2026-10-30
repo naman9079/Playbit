@@ -33,8 +33,7 @@ public class AiTutorService {
         var body=Map.of("model",model,"max_completion_tokens",maxTokens,"response_format",Map.of("type","json_object"),"messages",List.of(Map.of("role","system","content",instruction),Map.of("role","user","content",mapper.writeValueAsString(data))));
         String endpoint=base.replaceAll("/+$","")+"/chat/completions";
         var request=HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(60)).header("Authorization","Bearer "+key).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build();
-        HttpResponse<String> response;
-        try(var http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) { response=http.send(request,HttpResponse.BodyHandlers.ofString()); }
+        HttpResponse<String> response=sendWithRetry(request);
         if(response.statusCode()!=200) throw new AiProviderException(response.statusCode());
         var choices=mapper.readTree(response.body()).path("choices");
         if(!choices.isArray() || choices.isEmpty()) throw new IllegalStateException("AI response did not include a completion");
@@ -53,8 +52,7 @@ public class AiTutorService {
         var request=HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(60))
             .header("x-goog-api-key",key).header("Content-Type","application/json")
             .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build();
-        HttpResponse<String> response;
-        try(var http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) { response=http.send(request,HttpResponse.BodyHandlers.ofString()); }
+        HttpResponse<String> response=sendWithRetry(request);
         if(response.statusCode()!=200) throw new AiProviderException(response.statusCode());
         var candidates=mapper.readTree(response.body()).path("candidates");
         if(!candidates.isArray() || candidates.isEmpty()) throw new IllegalStateException("Gemini returned no candidate");
@@ -63,6 +61,19 @@ public class AiTutorService {
         if(parts.isArray()) for(var part:parts) if(part.hasNonNull("text")) content.append(part.path("text").asText());
         if(content.isEmpty()) throw new IllegalStateException("Gemini response was empty");
         return mapper.readTree(content.toString());
+    }
+    private HttpResponse<String> sendWithRetry(HttpRequest request) throws Exception {
+        try(var http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) {
+            HttpResponse<String> response=null;
+            for(int attempt=0;attempt<3;attempt++) {
+                response=http.send(request,HttpResponse.BodyHandlers.ofString());
+                int status=response.statusCode();
+                if(status!=500 && status!=502 && status!=503 && status!=504 || attempt==2) return response;
+                log.warn("AI provider returned transient HTTP {}; retrying request ({}/2)",status,attempt+1);
+                Thread.sleep(500L*(attempt+1));
+            }
+            return response;
+        }
     }
     public Map<String,Object> hint(UUID user,UUID match,UUID question) {
         reports.get(user,match); // A tutor can never leak answers during a live round.
@@ -142,6 +153,7 @@ public class AiTutorService {
                 case 401,403 -> "The AI provider rejected AI_API_KEY or this key is not allowed to use AI_MODEL.";
                 case 404 -> "The AI endpoint or model was not found. Check AI_BASE_URL and copy the exact model ID into AI_MODEL.";
                 case 429 -> "The AI provider free-tier rate limit or quota was reached. Wait and try again, or check the provider's usage limits.";
+                case 500,502,503,504 -> "Google Gemini is temporarily unavailable after automatic retries. Wait a minute and try again; this is usually a provider outage, not a problem with your API key.";
                 default -> "The AI provider returned an error (HTTP "+ex.status+"). Check its dashboard and try again.";
             };
             throw new ApiException(503,message);
