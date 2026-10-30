@@ -7,7 +7,7 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/playbit}
+    url: "${DATABASE_JDBC_URL:${DATABASE_URL:jdbc:postgresql://localhost:5432/playbit}}"
     username: ${DATABASE_USERNAME:postgres}
     password: ${DATABASE_PASSWORD:}
     hikari:
