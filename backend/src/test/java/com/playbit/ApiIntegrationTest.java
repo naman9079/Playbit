@@ -129,6 +129,19 @@ class ApiIntegrationTest {
         request(post("/api/rooms/"+other.path("id").asText()+"/leave"),bob);
         assertEquals(room.path("id"),request(body(post("/api/rooms/join"),invite),bob).path("id"));
     }
+    @Test void roomInvitesNormalizeCopiedCodesAndExplainMissingOrClosedRooms() throws Exception {
+        var room=request(body(post("/api/rooms/create"),Map.of("subjectId","math","difficulty",2)),alice);
+        String id=room.path("id").asText(),code=room.path("room_code").asText().toLowerCase(Locale.ROOT);
+        assertEquals(id,request(body(post("/api/rooms/join"),Map.of("code","  "+code.substring(0,3)+" "+code.substring(3)+"\n")),bob).path("id").asText());
+        // Reopening an invite for a current participant is idempotent.
+        assertEquals(id,request(body(post("/api/rooms/join"),Map.of("code",code)),bob).path("id").asText());
+        mvc.perform(as(body(post("/api/rooms/join"),Map.of("code","000000")),bob))
+            .andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.startsWith("No room matches this code")));
+        request(post("/api/rooms/"+id+"/leave"),alice);
+        mvc.perform(as(body(post("/api/rooms/join"),Map.of("code",code)),bob))
+            .andExpect(status().isConflict()).andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.startsWith("The host closed this room")));
+        mvc.perform(as(body(post("/api/rooms/join"),Map.of("code","abc")),bob)).andExpect(status().isBadRequest());
+    }
     @Test void rankedQueueIsAtomicAndRatingUpdatesAreZeroSum() throws Exception {
         assessed(alice);assessed(bob);request(body(post("/api/matchmaking/join"),Map.of("subjectId","logic","difficulty",0)),alice);var paired=request(body(post("/api/matchmaking/join"),Map.of("subjectId","logic","difficulty",0)),bob);String id=paired.path("matchId").asText();assertFalse(id.isEmpty());
         assertEquals(id,request(body(post("/api/matchmaking/join"),Map.of("subjectId","logic","difficulty",0)),alice).path("matchId").asText());assertEquals(id,request(post("/api/matchmaking/cancel"),alice).path("matchId").asText());

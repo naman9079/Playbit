@@ -12,7 +12,11 @@ public class Requests {
         }
     }
     public record Answer(@NotBlank String questionId, @NotNull @Size(max=100) String answer) {}
-    public record Join(@NotBlank @Pattern(regexp="[A-Za-z0-9]{6}") String code) {}
+    public record Join(@NotBlank @Pattern(regexp="[A-Z0-9]{6}") String code) {
+        public Join {
+            if (code != null) code = code.replaceAll("\\s+", "").toUpperCase(java.util.Locale.ROOT);
+        }
+    }
     public record Recovery(@NotBlank String matchId) {}
     public record Hint(@NotBlank String matchId, @NotBlank String questionId) {}
 }

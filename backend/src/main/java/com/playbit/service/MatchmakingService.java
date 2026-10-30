@@ -24,7 +24,12 @@ public class MatchmakingService {
         UUID id=matches.create(user,r.subjectId(),r.classLevel(),r.chapterId(),r.topicId(),r.difficulty()==0?2:r.difficulty(),"friend",code,5); return matches.state(user,id);
     }
     @Transactional public Map<String,Object> join(UUID user,String code) {
-        matches.lock(); var room=db.one("select * from matches where room_code=?",code.toUpperCase(Locale.ROOT)); UUID id=UUID.fromString(Db.str(room,"id"));
+        matches.lock();
+        var rooms=db.rows("select * from matches where room_code=? and mode='friend'",code.toUpperCase(Locale.ROOT));
+        if(rooms.isEmpty()) throw new ApiException(404,"No room matches this code. Ask your friend to copy the invite link from their room and open that link.");
+        var room=rooms.getFirst(); UUID id=UUID.fromString(Db.str(room,"id"));
+        if(Db.str(room,"status").equals("cancelled")) throw new ApiException(409,"The host closed this room. Ask your friend to create a new room and share its invite.");
+        if(Db.str(room,"status").equals("completed")) throw new ApiException(409,"This game has finished. Ask your friend to create a new room.");
         if(db.count("select count(*) from match_players where match_id=? and user_id=?",id,user)>0) return matches.state(user,id);
         matches.eligibleForFriend(user,Db.str(room,"subject_id")); matches.available(user);
         if(!Db.str(room,"status").equals("waiting") || db.count("select count(*) from match_players where match_id=?",id)>=2) throw new ApiException(409,"This room is full or has already started");

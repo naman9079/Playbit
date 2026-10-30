@@ -66,7 +66,7 @@ export default function Play() {
   const [classLevel, setClassLevel] = useState("");
   const [chapter, setChapter] = useState("");
   const [topic, setTopic] = useState("");
-  const [code, setCode] = useState(params.get("room") || "");
+  const [code, setCode] = useState((params.get("room") || "").replace(/\s/g, "").toUpperCase());
   const [searching, setSearching] = useState(false);
   const [queueError, setQueueError] = useState<unknown>();
   const [queueInfo, setQueueInfo] = useState<Record<string, any>>({
@@ -437,8 +437,20 @@ export default function Play() {
               required
               minLength={6}
               maxLength={6}
+              pattern="[A-Za-z0-9]{6}"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
               value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              onChange={(e) => {
+                setCode(e.target.value.replace(/\s/g, "").toUpperCase());
+                join.reset();
+              }}
+              onPaste={(e) => {
+                e.preventDefault();
+                setCode(e.clipboardData.getData("text").replace(/\s/g, "").toUpperCase());
+                join.reset();
+              }}
               placeholder="ABC123"
             />
             <Button variant="outline" disabled={join.isPending}>
