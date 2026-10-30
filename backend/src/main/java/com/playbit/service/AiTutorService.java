@@ -15,6 +15,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class AiTutorService {
     private static final Logger log=LoggerFactory.getLogger(AiTutorService.class);
+    private static final class AiProviderException extends Exception {
+        private final int status;
+        private AiProviderException(int status) { this.status=status; }
+    }
     private final Db db; private final ReportService reports; private final ObjectMapper mapper; private final QuestionGenerationService generator;
     private final String base,key,model,admins;
     public AiTutorService(Db db,ReportService reports,ObjectMapper mapper,QuestionGenerationService generator,@Value("${playbit.ai.base-url}") String base,@Value("${playbit.ai.key}") String key,@Value("${playbit.ai.model}") String model,@Value("${playbit.ai.admin-ids}") String admins) {this.db=db;this.reports=reports;this.mapper=mapper;this.generator=generator;this.base=base;this.key=key;this.model=model;this.admins=admins;}
@@ -23,12 +27,17 @@ public class AiTutorService {
     }
     private com.fasterxml.jackson.databind.JsonNode ask(String instruction,Object data,int maxTokens) throws Exception {
         if(key.isBlank()) throw new IllegalStateException("AI is not configured");
-        var body=Map.of("model",model,"temperature",.2,"max_tokens",maxTokens,"response_format",Map.of("type","json_object"),"messages",List.of(Map.of("role","system","content",instruction),Map.of("role","user","content",mapper.writeValueAsString(data))));
-        var request=HttpRequest.newBuilder(URI.create(base+"/chat/completions")).timeout(Duration.ofSeconds(15)).header("Authorization","Bearer "+key).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build();
+        var body=Map.of("model",model,"max_completion_tokens",maxTokens,"response_format",Map.of("type","json_object"),"messages",List.of(Map.of("role","system","content",instruction),Map.of("role","user","content",mapper.writeValueAsString(data))));
+        String endpoint=base.replaceAll("/+$","")+"/chat/completions";
+        var request=HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(60)).header("Authorization","Bearer "+key).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build();
         HttpResponse<String> response;
         try(var http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) { response=http.send(request,HttpResponse.BodyHandlers.ofString()); }
-        if(response.statusCode()!=200) throw new IllegalStateException("AI unavailable");
-        return mapper.readTree(mapper.readTree(response.body()).path("choices").get(0).path("message").path("content").asText());
+        if(response.statusCode()!=200) throw new AiProviderException(response.statusCode());
+        var choices=mapper.readTree(response.body()).path("choices");
+        if(!choices.isArray() || choices.isEmpty()) throw new IllegalStateException("AI response did not include a completion");
+        String content=choices.get(0).path("message").path("content").asText();
+        if(content.isBlank()) throw new IllegalStateException("AI response was empty");
+        return mapper.readTree(content);
     }
     public Map<String,Object> hint(UUID user,UUID match,UUID question) {
         reports.get(user,match); // A tutor can never leak answers during a live round.
@@ -101,9 +110,22 @@ public class AiTutorService {
                 if(points.size()>=2) topics.add(Map.of("name",name,"points",points));
             }
             return Map.of("topics",topics,"source","uploaded-material");
+        } catch(AiProviderException ex) {
+            log.warn("Topic explanation provider returned HTTP {}",ex.status);
+            String message=switch(ex.status) {
+                case 400 -> "The AI provider rejected the request. Check that AI_MODEL is an enabled chat model and supports JSON responses.";
+                case 401,403 -> "The AI provider rejected AI_API_KEY or this key is not allowed to use AI_MODEL.";
+                case 404 -> "The AI endpoint or model was not found. Check AI_BASE_URL and copy the exact model ID into AI_MODEL.";
+                case 429 -> "The AI provider rate limit or account credits were exceeded. Check your AgentRouter quota and billing.";
+                default -> "The AI provider returned an error (HTTP "+ex.status+"). Check its dashboard and try again.";
+            };
+            throw new ApiException(503,message);
+        } catch(java.net.http.HttpTimeoutException ex) {
+            log.warn("Topic explanation provider request timed out");
+            throw new ApiException(504,"The AI provider took too long to respond. Try a smaller PDF excerpt or choose a faster model.");
         } catch(Exception ex) {
             log.warn("Topic explanation request failed: {}",ex.getClass().getSimpleName());
-            throw new ApiException(503,"The AI provider could not create topic explanations. Check AI_API_KEY, AI_BASE_URL, AI_MODEL, and your provider's request or billing limits.");
+            throw new ApiException(503,"The AI provider returned an unreadable response. Check that AI_MODEL supports OpenAI-compatible chat completions with JSON output.");
         }
     }
 }
