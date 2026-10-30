@@ -118,11 +118,20 @@ export function SetupNotice() {
       <Sparkles size={20} />
       <div>
         <strong>Your arena is ready for connection.</strong>
-        <p>
-          Add your Supabase URL and anon key to <code>frontend/.env.local</code>
-          , configure the backend database, then restart the servers. Your
-          progress will be saved to your account.
-        </p>
+        {import.meta.env.DEV ? (
+          <p>
+            Add <code>VITE_SUPABASE_URL</code> and{" "}
+            <code>VITE_SUPABASE_ANON_KEY</code> to{" "}
+            <code>frontend/.env.local</code>, then restart the dev server.
+          </p>
+        ) : (
+          <p>
+            Add <code>VITE_SUPABASE_URL</code> and{" "}
+            <code>VITE_SUPABASE_ANON_KEY</code> in your Vercel project’s
+            Environment Variables for Production and Preview, then redeploy.
+            Set <code>VITE_API_BASE_URL</code> to your deployed Playbit API too.
+          </p>
+        )}
       </div>
     </div>
   );
