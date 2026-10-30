@@ -13,12 +13,15 @@ import com.playbit.repository.Db;
 public class MatchmakingService {
     private final Db db; private final MatchService matches; private final Clock clock;
     public MatchmakingService(Db db,MatchService matches,Clock clock) {this.db=db;this.matches=matches;this.clock=clock;}
+    private boolean sameLevel(Object stored,Integer requested) {
+        return requested==null?stored==null:stored instanceof Number number && number.intValue()==requested;
+    }
     @Transactional public Map<String,Object> create(UUID user,Requests.Start r) {
         matches.lock();matches.eligible(user,r.subjectId(),false);matches.available(user);
         db.run("delete from matchmaking_queue where user_id=?",user);
         String code; var random=new SecureRandom(); String alphabet="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
         do { var s=new StringBuilder(); for(int i=0;i<6;i++) s.append(alphabet.charAt(random.nextInt(alphabet.length())));code=s.toString(); } while(db.count("select count(*) from matches where room_code=?",code)>0);
-        UUID id=matches.create(user,r.subjectId(),r.topicId(),r.difficulty()==0?2:r.difficulty(),"friend",code,5); return matches.state(user,id);
+        UUID id=matches.create(user,r.subjectId(),r.classLevel(),r.chapterId(),r.topicId(),r.difficulty()==0?2:r.difficulty(),"friend",code,5); return matches.state(user,id);
     }
     @Transactional public Map<String,Object> join(UUID user,String code) {
         matches.lock(); var room=db.one("select * from matches where room_code=?",code.toUpperCase(Locale.ROOT)); UUID id=UUID.fromString(Db.str(room,"id"));
@@ -41,24 +44,31 @@ public class MatchmakingService {
         if(Db.str(room,"host_id").equals(user.toString())) db.run("update matches set status='cancelled',version=version+1 where id=?",id);
         else {db.run("delete from match_players where match_id=? and user_id=?",id,user);db.run("update matches set version=version+1 where id=?",id);}
     }
-    @Transactional public Map<String,Object> queue(UUID user,String subject) {
-        matches.lock(); matches.eligible(user,subject,false); Instant now=clock.instant();
+    @Transactional public Map<String,Object> queue(UUID user,Requests.Start request) {
+        String subject=request.subjectId();
+        matches.lock(); matches.eligible(user,subject,false);
+        matches.validateCurriculum(subject,request.classLevel(),request.chapterId(),request.topicId());
+        Instant now=clock.instant();
         var existing=db.rows("select * from matchmaking_queue where user_id=?",user);
         if(!existing.isEmpty() && existing.getFirst().get("match_id")!=null) return Map.of("matchId",existing.getFirst().get("match_id"));
         matches.available(user);
         db.run("delete from matchmaking_queue where heartbeat_at<? and match_id is null",Timestamp.from(now.minusSeconds(20)));
         existing=db.rows("select * from matchmaking_queue where user_id=?",user);
         int rating=Db.integer(db.one("select rating from user_subject_ratings where user_id=? and subject_id=?",user,subject),"rating");
-        if(existing.isEmpty()) db.run("insert into matchmaking_queue(user_id,subject_id,rating,joined_at,heartbeat_at) values(?,?,?,?,?)",user,subject,rating,Timestamp.from(now),Timestamp.from(now));
-        else if(!subject.equals(Db.str(existing.getFirst(),"subject_id"))) throw new ApiException(409,"Cancel the current subject queue first");
+        if(existing.isEmpty()) db.run("insert into matchmaking_queue(user_id,subject_id,rating,joined_at,heartbeat_at,class_level,chapter_id,topic_id) values(?,?,?,?,?,?,?,?)",user,subject,rating,Timestamp.from(now),Timestamp.from(now),request.classLevel(),request.chapterId(),request.topicId());
+        else if(!subject.equals(Db.str(existing.getFirst(),"subject_id"))
+            || !sameLevel(existing.getFirst().get("class_level"),request.classLevel())
+            || !Objects.equals(existing.getFirst().get("chapter_id"),request.chapterId())
+            || !Objects.equals(existing.getFirst().get("topic_id"),request.topicId()))
+            throw new ApiException(409,"Cancel your current search before changing its class, chapter, or topic");
         db.run("update matchmaking_queue set heartbeat_at=? where user_id=?",Timestamp.from(now),user);
         var own=db.one("select * from matchmaking_queue where user_id=?",user);long elapsed=Duration.between(MatchService.instant(own.get("joined_at")),now).toSeconds();int tolerance=(int)Math.min(600,150+50*(elapsed/10));
-        for(var candidate:db.rows("select * from matchmaking_queue where subject_id=? and user_id<>? and match_id is null order by joined_at",subject,user)) {
+        for(var candidate:db.rows("select * from matchmaking_queue where subject_id=? and user_id<>? and match_id is null and class_level is not distinct from cast(? as smallint) and chapter_id is not distinct from cast(? as varchar(40)) and topic_id is not distinct from cast(? as varchar(40)) order by joined_at",subject,user,request.classLevel(),request.chapterId(),request.topicId())) {
             long otherWait=Duration.between(MatchService.instant(candidate.get("joined_at")),now).toSeconds();int otherTolerance=(int)Math.min(600,150+50*(otherWait/10));
             if(Math.abs(Db.integer(candidate,"rating")-rating)>Math.min(tolerance,otherTolerance)) continue;
             UUID other=UUID.fromString(Db.str(candidate,"user_id"));
             if(db.count("select count(*) from match_players p join matches m on m.id=p.match_id where p.user_id=? and m.status in ('active','waiting')",other)>0) continue;
-            int avg=(rating+Db.integer(candidate,"rating"))/2;UUID id=matches.create(user,subject,null,avg<900?1:avg>=1200?3:2,"ranked",null,5);
+            int avg=(rating+Db.integer(candidate,"rating"))/2;UUID id=matches.create(user,subject,request.classLevel(),request.chapterId(),request.topicId(),avg<900?1:avg>=1200?3:2,"ranked",null,5);
             matches.addPlayer(id,other,subject); matches.activate(id);
             db.run("update matchmaking_queue set match_id=? where user_id=? or user_id=?",id,user,other);return Map.of("matchId",id);
         }

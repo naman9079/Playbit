@@ -13,13 +13,15 @@ import com.playbit.util.Json;
 @Service
 public class MatchService {
     public static final int ROUND_SECONDS=15;
-    private final Db db; private final Clock clock; private final ProfileService profiles; private final QuestionService questions;
+    private final Db db; private final Clock clock; private final ProfileService profiles; private final QuestionService questions; private final CurriculumService curriculum;
     private final AdaptiveLearningService adaptive; private final RatingService ratings; private final XpService xp; private final ReportService reports; private final Json json;
-    public MatchService(Db db,Clock clock,ProfileService profiles,QuestionService questions,AdaptiveLearningService adaptive,RatingService ratings,XpService xp,ReportService reports,Json json) {
-        this.db=db;this.clock=clock;this.profiles=profiles;this.questions=questions;this.adaptive=adaptive;this.ratings=ratings;this.xp=xp;this.reports=reports;this.json=json;
+    public MatchService(Db db,Clock clock,ProfileService profiles,QuestionService questions,CurriculumService curriculum,AdaptiveLearningService adaptive,RatingService ratings,XpService xp,ReportService reports,Json json) {
+        this.db=db;this.clock=clock;this.profiles=profiles;this.questions=questions;this.curriculum=curriculum;this.adaptive=adaptive;this.ratings=ratings;this.xp=xp;this.reports=reports;this.json=json;
     }
     void lock() { db.one("select id from system_locks where id=1 for update"); }
+    private static Integer nullableInteger(Object value) { return value instanceof Number number?number.intValue():null; }
     public static Instant instant(Object value) { if(value instanceof OffsetDateTime d) return d.toInstant(); if(value instanceof Timestamp t) return t.toInstant(); return Instant.parse(value.toString()); }
+    public void validateCurriculum(String subject,Integer classLevel,String chapter,String topic) { curriculum.selectedTopics(subject,classLevel,chapter,topic); }
     public void participant(UUID user,UUID match) { if(db.count("select count(*) from match_players where user_id=? and match_id=?",user,match)==0) throw new ApiException(403,"You are not a participant in this match"); }
     void eligible(UUID user,String subject,boolean diagnostic) {
         profiles.ensure(user);
@@ -37,16 +39,17 @@ public class MatchService {
     }
     @Transactional public Map<String,Object> start(UUID user,Requests.Start request,String mode) {
         lock(); eligible(user,request.subjectId(),mode.equals("diagnostic")); available(user);
+        curriculum.selectedTopics(request.subjectId(),request.classLevel(),request.chapterId(),request.topicId());
         db.run("delete from matchmaking_queue where user_id=?",user);
         int difficulty=request.difficulty()==0?adaptive.difficulty(user,request.subjectId(),request.topicId()):request.difficulty();
         if(mode.equals("diagnostic")) difficulty=switch(Db.str(db.one("select proficiency from profiles where id=?",user),"proficiency")) {case "advanced" -> 3; case "intermediate" -> 2; default -> 1;};
-        UUID id=create(user,request.subjectId(),request.topicId(),difficulty,mode,null,mode.equals("recovery")?3:5);
+        UUID id=create(user,request.subjectId(),request.classLevel(),request.chapterId(),request.topicId(),difficulty,mode,null,mode.equals("recovery")?3:5);
         activate(id); return state(user,id);
     }
-    UUID create(UUID user,String subject,String topic,int difficulty,String mode,String code,int count) {
+    UUID create(UUID user,String subject,Integer classLevel,String chapter,String topic,int difficulty,String mode,String code,int count) {
         UUID id=UUID.randomUUID();
-        if(topic!=null && db.count("select count(*) from topics where id=? and subject_id=?",topic,subject)==0) throw new ApiException(400,"Invalid topic");
-        db.run("insert into matches(id,subject_id,mode,status,host_id,difficulty,topic_id,room_code,question_count) values(?,?,?,'waiting',?,?,?,?,?)",id,subject,mode,user,difficulty,topic,code,count);
+        curriculum.selectedTopics(subject,classLevel,chapter,topic);
+        db.run("insert into matches(id,subject_id,mode,status,host_id,difficulty,topic_id,class_level,chapter_id,room_code,question_count) values(?,?,?,'waiting',?,?,?,?,?,?,?)",id,subject,mode,user,difficulty,topic,classLevel,chapter,code,count);
         addPlayer(id,user,subject); return id;
     }
     void addPlayer(UUID match,UUID user,String subject) {
@@ -56,7 +59,7 @@ public class MatchService {
     void activate(UUID id) {
         var match=db.one("select * from matches where id=?",id);
         var users=db.rows("select user_id from match_players where match_id=? order by user_id",id).stream().map(p->UUID.fromString(Db.str(p,"user_id"))).toList();
-        var selected=questions.select(Db.str(match,"subject_id"),(String)match.get("topic_id"),Db.integer(match,"difficulty"),Db.integer(match,"question_count"),users,Db.str(match,"mode").equals("diagnostic"));
+        var selected=questions.select(Db.str(match,"subject_id"),nullableInteger(match.get("class_level")),(String)match.get("chapter_id"),(String)match.get("topic_id"),Db.integer(match,"difficulty"),Db.integer(match,"question_count"),users,Db.str(match,"mode").equals("diagnostic"));
         Instant start=clock.instant().plusSeconds(3); var rng=new Random(id.getLeastSignificantBits());
         for(int i=0;i<selected.size();i++) {
             int delay=3+rng.nextInt(10); int botPoints=rng.nextDouble()<(.48+.12*Db.integer(match,"difficulty"))?100+(int)Math.floor(20*(1-delay/15.0)):0;
@@ -156,7 +159,9 @@ public class MatchService {
         var claimed=db.rows("select recovery_match_id from recovery_claims where user_id=? and source_match_id=?",user,source);
         if(!claimed.isEmpty()) return state(user,UUID.fromString(Db.str(claimed.getFirst(),"recovery_match_id")));
         var weak=db.one("select q.subject_id,q.topic_id,avg(case when a.is_correct then 1.0 else 0.0 end) as accuracy from question_attempts a join questions q on q.id=a.question_id where a.match_id=? and a.user_id=? group by q.subject_id,q.topic_id order by accuracy,q.topic_id limit 1",source,user);
-        var match=start(user,new Requests.Start(Db.str(weak,"subject_id"),Db.str(weak,"topic_id"),1),"recovery");
+        var sourceMatch=db.one("select class_level,chapter_id from matches where id=?",source);
+        Integer classLevel=nullableInteger(sourceMatch.get("class_level"));
+        var match=start(user,new Requests.Start(Db.str(weak,"subject_id"),Db.str(weak,"topic_id"),1,classLevel,(String)sourceMatch.get("chapter_id")),"recovery");
         db.run("insert into recovery_claims(user_id,source_match_id,recovery_match_id) values(?,?,?)",user,source,match.get("id")); return match;
     }
 }

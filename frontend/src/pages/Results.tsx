@@ -15,7 +15,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { api } from "../services/api";
-import { subjectName } from "../lib/catalog";
+import { curriculumScope, subjectName } from "../lib/catalog";
 import { Button } from "../components/ui/button";
 import { ErrorBox, Loading, Stat } from "../components/common";
 export default function Results() {
@@ -59,7 +59,7 @@ export default function Results() {
           {s.outcome === "win" ? <Trophy size={46} /> : <Target size={46} />}
         </span>
         <div className="eyebrow">
-          {subjectName(r.match.subject_id)} ·{" "}
+          {subjectName(r.match.subject_id)} · {curriculumScope(r.match)} ·{" "}
           {diagnostic
             ? "PLACEMENT COMPLETE"
             : `${s.outcome === "complete" ? "CHALLENGE" : s.outcome.toUpperCase()} · ROUND COMPLETE`}

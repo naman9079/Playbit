@@ -9,12 +9,13 @@ import com.playbit.repository.*;
 import com.playbit.service.*;
 @RestController @RequestMapping("/api")
 public class ApiController {
-    private final Db db;private final SubjectRepository subjects;private final ProfileService profiles;private final MatchService matches;private final MatchmakingService multiplayer;private final ReportService reports;private final AiTutorService ai;
-    public ApiController(Db db,SubjectRepository subjects,ProfileService profiles,MatchService matches,MatchmakingService multiplayer,ReportService reports,AiTutorService ai) {this.db=db;this.subjects=subjects;this.profiles=profiles;this.matches=matches;this.multiplayer=multiplayer;this.reports=reports;this.ai=ai;}
+    private final Db db;private final SubjectRepository subjects;private final ProfileService profiles;private final MatchService matches;private final MatchmakingService multiplayer;private final ReportService reports;private final AiTutorService ai;private final CurriculumService curriculum;
+    public ApiController(Db db,SubjectRepository subjects,ProfileService profiles,MatchService matches,MatchmakingService multiplayer,ReportService reports,AiTutorService ai,CurriculumService curriculum) {this.db=db;this.subjects=subjects;this.profiles=profiles;this.matches=matches;this.multiplayer=multiplayer;this.reports=reports;this.ai=ai;this.curriculum=curriculum;}
     private UUID user(Jwt jwt) {return UUID.fromString(jwt.getSubject());}
     @GetMapping("/health") Object health() {return Map.of("status","ok");}
     @GetMapping("/subjects") Object subjects() {return subjects.findAll();}
     @GetMapping("/subjects/{id}/topics") Object topics(@PathVariable String id) {return db.rows("select * from topics where subject_id=? order by id",id);}
+    @GetMapping("/subjects/{id}/curriculum") CurriculumService.Catalog curriculum(@PathVariable String id) {return curriculum.catalog(id);}
     @GetMapping("/me") Object me(@AuthenticationPrincipal Jwt jwt) {return profiles.me(user(jwt));}
     @PutMapping("/me") Object update(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.Profile request) {return profiles.update(user(jwt),request);}
     @GetMapping("/profile/{id}") Object profile(@PathVariable UUID id) {var p=profiles.get(id); p.remove("language");p.remove("preferred_subjects");p.remove("proficiency");return p;}
@@ -30,7 +31,7 @@ public class ApiController {
     @PostMapping("/rooms/join") Object join(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.Join request) {return multiplayer.join(user(jwt),request.code());}
     @PostMapping("/rooms/{id}/ready") Object ready(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id) {return multiplayer.ready(user(jwt),id);}
     @PostMapping("/rooms/{id}/leave") Object leave(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id) {multiplayer.leave(user(jwt),id);return Map.of("left",true);}
-    @PostMapping("/matchmaking/join") Object queue(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.Start request) {return multiplayer.queue(user(jwt),request.subjectId());}
+    @PostMapping("/matchmaking/join") Object queue(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.Start request) {return multiplayer.queue(user(jwt),request);}
     @PostMapping("/matchmaking/cancel") Object cancel(@AuthenticationPrincipal Jwt jwt) {return multiplayer.cancel(user(jwt));}
     @GetMapping("/mastery") Object mastery(@AuthenticationPrincipal Jwt jwt) {return db.rows("select u.*,t.name,t.subject_id from user_topic_mastery u join topics t on t.id=u.topic_id where user_id=? order by mastery_score",user(jwt));}
     @GetMapping("/progress") Object progress(@AuthenticationPrincipal Jwt jwt) {

@@ -61,7 +61,7 @@ On macOS/Linux export the backend environment variables, then run `mvn -f backen
 
 - Email signup/login/logout and persisted Supabase sessions; protected routes; profile editing; eight original avatar variations; three subjects and nine topics.
 - Per-subject, one-time five-question diagnostic. Self-reported confidence affects placement difficulty; correct answers determine the provisional rating. Other subjects retain their independent assessment state.
-- Timed bot, solo, recovery, real friend-duel, and skill-based ranked matchmaking flows. Rooms have six-character invitation codes, two-player ready checks, shared questions, cancellation while waiting, and REST recovery after refresh.
+- Timed bot, solo, recovery, real friend-duel, and skill-based ranked matchmaking flows. Players can scope practice to Classes 6–12, chapters, and topics; ranked players are paired only when their selected scope matches. Rooms have six-character invitation codes, two-player ready checks, shared questions, cancellation while waiting, and REST recovery after refresh.
 - Byte is explicitly a simulated opponent, with deterministic per-match delay and probability. Its score is computed on the server. No expensive LLM calls during matches.
 - Persistent question IDs, SHA-256 normalized fingerprints, parameter variation, topic balance, and avoidance of each participant's last 150 attempted questions. If a finite template domain is exhausted, the oldest-used verified bank question is a fallback; no question repeats within a match. This minimizes recent repetition without claiming zero repetition.
 - Match history, profile totals, XP/levels, topic mastery, paginated XP/subject leaderboards, complete stored reports, formulas, worked solutions, and fresh three-question recovery challenges.
@@ -88,7 +88,7 @@ All routes except health and subject catalog require `Authorization: Bearer <Sup
 | Area | Routes |
 |---|---|
 | Profile | `GET/PUT /api/me`, `GET /api/profile/{userId}` |
-| Catalog | `GET /api/subjects`, `GET /api/subjects/{id}/topics` |
+| Catalog | `GET /api/subjects`, `GET /api/subjects/{id}/topics`, `GET /api/subjects/{id}/curriculum` |
 | Placement | `POST /api/diagnostics/start`, `POST /api/diagnostics/{id}/answers`, `GET /api/ratings/me` |
 | Games | `POST /api/matches/bot`, `POST /api/matches/solo`, `GET /api/matches/{id}`, `POST /api/matches/{id}/answers`, `GET /api/matches/{id}/results` |
 | Rooms | `POST /api/rooms/create`, `/api/rooms/join`, `/api/rooms/{id}/ready`, `/api/rooms/{id}/leave` |
@@ -97,7 +97,7 @@ All routes except health and subject catalog require `Authorization: Bearer <Sup
 | Rankings | `GET /api/leaderboards/overall?page=0`, `/api/leaderboards/subject/{subjectId}?page=0` |
 | Learning | `GET /api/reports/{matchId}`, `POST /api/recovery/start`, `/api/ai/hint`, `/api/ai/reports/{matchId}`, `/api/ai/questions/generate` |
 
-Start body: `{"subjectId":"math","topicId":null,"difficulty":0}` (0 adaptive, 1/2/3 fixed). Answer body: `{"questionId":"uuid","answer":"one of the four option strings"}`. Join: `{"code":"ABC234"}`. Recovery: `{"matchId":"uuid"}`. Hint: `{"matchId":"uuid","questionId":"uuid"}`. AI hints are available **only after match completion**. Question generation is restricted to UUIDs in `AI_ADMIN_IDS`.
+Start body: `{"subjectId":"math","classLevel":8,"chapterId":"algebra","topicId":"exponents","difficulty":0}`. Class, chapter, and topic are optional filters; difficulty 0 is adaptive and 1/2/3 are fixed. Answer body: `{"questionId":"uuid","answer":"one of the four option strings"}`. Join: `{"code":"ABC234"}`. Recovery: `{"matchId":"uuid"}`. Hint: `{"matchId":"uuid","questionId":"uuid"}`. AI hints are available **only after match completion**. Question generation is restricted to UUIDs in `AI_ADMIN_IDS`.
 
 Matchmaking join is also its heartbeat: poll every two seconds while searching. Expired entries are removed after 20 seconds. Tolerance begins at ±150, widens by 50 per ten seconds up to 600, and must satisfy both players. Matched queue records return the existing match on retries and are cleared at completion. A late cancellation returns the already-created match instead of silently losing a rival.
 

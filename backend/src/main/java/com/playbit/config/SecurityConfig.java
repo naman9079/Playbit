@@ -38,7 +38,7 @@ public class SecurityConfig {
         var source = new UrlBasedCorsConfigurationSource(); source.registerCorsConfiguration("/**", cors);
         return http.csrf(c -> c.disable()).cors(c -> c.configurationSource(source))
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .authorizeHttpRequests(a -> a.requestMatchers("/api/health", "/api/subjects", "/api/subjects/*/topics").permitAll().anyRequest().authenticated())
+            .authorizeHttpRequests(a -> a.requestMatchers("/api/health", "/api/subjects", "/api/subjects/*/topics", "/api/subjects/*/curriculum").permitAll().anyRequest().authenticated())
             .oauth2ResourceServer(o -> o.jwt(j -> {})).build();
     }
 }

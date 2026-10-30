@@ -8,8 +8,15 @@ import org.springframework.stereotype.Service;
 public class QuestionGenerationService {
     public record Question(String topic, int difficulty, String text, List<String> options, String answer, String formula, List<String> steps, String explanation, String fingerprint) {}
     public Question generate(String topic,int difficulty,Random rng) {
+        return generate(topic,difficulty,null,rng);
+    }
+    public Question generate(String topic,int difficulty,Integer classLevel,Random rng) {
         if(difficulty<1 || difficulty>3) throw new IllegalArgumentException("Difficulty");
-        int a=2+rng.nextInt(6*difficulty), b=2+rng.nextInt(5*difficulty), c=2+rng.nextInt(7*difficulty);
+        if(classLevel!=null && (classLevel<6 || classLevel>12)) throw new IllegalArgumentException("Class level");
+        double classScale=classLevel==null?1.0:1.0+(classLevel-6)*0.25;
+        int a=2+rng.nextInt(Math.max(1,(int)Math.round(6*difficulty*classScale)));
+        int b=2+rng.nextInt(Math.max(1,(int)Math.round(5*difficulty*classScale)));
+        int c=2+rng.nextInt(Math.max(1,(int)Math.round(7*difficulty*classScale)));
         String text,formula,explanation; List<String> steps; int answer;
         switch(topic) {
             case "fractions" -> { int numerator=a+b; answer=numerator;

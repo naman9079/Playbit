@@ -14,7 +14,7 @@ import {
 import { useMatch } from "../hooks/useMatch";
 import { useSession } from "../stores/session";
 import { api } from "../services/api";
-import { subjectName } from "../lib/catalog";
+import { curriculumScope, subjectName } from "../lib/catalog";
 import { Avatar, ErrorBox, Loading } from "../components/common";
 import { Button } from "../components/ui/button";
 export function Room() {
@@ -46,7 +46,9 @@ export function Room() {
       <div className="page-heading center">
         <span className="eyebrow">BETTER WITH A RIVAL</span>
         <h1>Your private arena.</h1>
-        <p>{subjectName(m.subject_id)} · 5 questions · Unranked friend duel</p>
+        <p>
+          {subjectName(m.subject_id)} · {curriculumScope(m)} · 5 questions · Unranked friend duel
+        </p>
       </div>
       <div className="panel room-panel">
         {m.status === "cancelled" ? (
@@ -222,7 +224,7 @@ export default function Arena() {
                   ? "BOT BATTLE"
                   : "YOUR ARENA"}
         </span>
-        <span>{subjectName(m.subject_id)}</span>
+        <span>{subjectName(m.subject_id)} · {curriculumScope(m)}</span>
       </div>
       <div className="scoreboard">
         <div className="score-player">

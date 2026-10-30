@@ -33,3 +33,31 @@ export const subjects = [
 ];
 export const subjectName = (id: string) =>
   subjects.find((s) => s.id === id)?.name || id;
+
+const chapterNames: Record<string, string> = {
+  "number-sense": "Number Sense",
+  algebra: "Algebra and Powers",
+  "business-math": "Percentages and Profit or Loss",
+  "work-rates": "Work and Rates",
+  patterns: "Patterns and Codes",
+  "spatial-reasoning": "Direction and Spatial Reasoning",
+};
+const topicNames: Record<string, string> = {
+  fractions: "Fractions",
+  algebra: "Algebra",
+  exponents: "Exponents",
+  percentages: "Percentages",
+  "profit-loss": "Profit and Loss",
+  "time-work": "Time and Work",
+  "number-series": "Number Series",
+  directions: "Direction Sense",
+  coding: "Coding-Decoding",
+};
+export function curriculumScope(match: Record<string, any>) {
+  const parts = [
+    match.class_level ? `Class ${match.class_level}` : "All classes",
+    match.chapter_id ? chapterNames[match.chapter_id] || match.chapter_id : null,
+    match.topic_id ? topicNames[match.topic_id] || match.topic_id : null,
+  ].filter(Boolean);
+  return parts.join(" · ");
+}

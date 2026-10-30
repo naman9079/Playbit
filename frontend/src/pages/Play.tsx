@@ -62,6 +62,8 @@ export default function Play() {
       : "bot",
   );
   const [difficulty, setDifficulty] = useState(0);
+  const [classLevel, setClassLevel] = useState("");
+  const [chapter, setChapter] = useState("");
   const [topic, setTopic] = useState("");
   const [code, setCode] = useState(params.get("room") || "");
   const [searching, setSearching] = useState(false);
@@ -74,10 +76,19 @@ export default function Play() {
     isPending,
     error,
   } = useQuery({ queryKey: ["me"], queryFn: () => api("/me") });
-  const topics = useQuery({
-    queryKey: ["topics", subject],
-    queryFn: () => api<any[]>(`/subjects/${subject}/topics`),
+  const curriculum = useQuery({
+    queryKey: ["curriculum", subject],
+    queryFn: () =>
+      api<{
+        classLevels: number[];
+        chapters: { id: string; name: string; topics: { id: string; name: string }[] }[];
+      }>(`/subjects/${subject}/curriculum`),
   });
+  const chapters = curriculum.data?.chapters ?? [];
+  const selectedChapter = chapters.find((item) => item.id === chapter);
+  const availableTopics = selectedChapter
+    ? selectedChapter.topics
+    : chapters.flatMap((item) => item.topics);
   const rating = me?.ratings.find((r: any) => r.subject_id === subject);
   const start = useMutation({
     mutationFn: (diagnostic: boolean) =>
@@ -88,7 +99,13 @@ export default function Play() {
             ? "/rooms/create"
             : `/matches/${mode}`,
         "POST",
-        { subjectId: subject, topicId: topic || null, difficulty },
+        {
+          subjectId: subject,
+          classLevel: classLevel ? Number(classLevel) : null,
+          chapterId: chapter || null,
+          topicId: topic || null,
+          difficulty,
+        },
       ),
     onSuccess: (r) =>
       navigate(r.status === "waiting" ? `/room/${r.id}` : `/arena/${r.id}`),
@@ -109,6 +126,9 @@ export default function Play() {
       try {
         const r = await api("/matchmaking/join", "POST", {
           subjectId: subject,
+          classLevel: classLevel ? Number(classLevel) : null,
+          chapterId: chapter || null,
+          topicId: topic || null,
           difficulty: 0,
         });
         if (stopped) return;
@@ -129,7 +149,7 @@ export default function Play() {
       stopped = true;
       clearTimeout(timer);
     };
-  }, [searching, subject, navigate]);
+  }, [searching, subject, classLevel, chapter, topic, navigate]);
   async function cancel() {
     try {
       const r = await api("/matchmaking/cancel", "POST");
@@ -183,6 +203,7 @@ export default function Play() {
             disabled={searching}
             onClick={() => {
               setSubject(s.id);
+              setChapter("");
               setTopic("");
             }}
             className={`selection-card ${s.color} ${subject === s.id ? "selected" : ""}`}
@@ -258,19 +279,54 @@ export default function Play() {
               <h3>Make it your match</h3>
               <p>
                 {mode === "ranked"
-                  ? "Match with an assessed player near your subject rating."
+                  ? "Find an assessed player with the same class, chapter, and topic filters."
                   : "5 questions · 15 seconds each · up to 120 points per answer"}
               </p>
               <div className="form-grid">
                 <label>
+                  Class
+                  <select
+                    disabled={searching}
+                    value={classLevel}
+                    onChange={(e) => setClassLevel(e.target.value)}
+                  >
+                    <option value="">Any class</option>
+                    {curriculum.data?.classLevels.map((level) => (
+                      <option value={level} key={level}>
+                        Class {level}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Chapter
+                  <select
+                    disabled={searching}
+                    value={chapter}
+                    onChange={(e) => {
+                      setChapter(e.target.value);
+                      setTopic("");
+                    }}
+                  >
+                    <option value="">All chapters</option>
+                    {chapters.map((item) => (
+                      <option value={item.id} key={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
                   Topic
                   <select
-                    disabled={mode === "ranked" || searching}
+                    disabled={searching}
                     value={topic}
                     onChange={(e) => setTopic(e.target.value)}
                   >
-                    <option value="">All topics · balanced mix</option>
-                    {topics.data?.map((t) => (
+                    <option value="">
+                      {chapter ? "All topics in this chapter" : "All topics · balanced mix"}
+                    </option>
+                    {availableTopics.map((t) => (
                       <option value={t.id} key={t.id}>
                         {t.name}
                       </option>
@@ -291,6 +347,10 @@ export default function Play() {
                   </select>
                 </label>
               </div>
+              <small className="muted">
+                Class adjusts question number ranges. Chapter and topic filters
+                are shared by both players in ranked duels.
+              </small>
             </div>
             <div className="start-panel">
               <span className="start-art">
