@@ -1,5 +1,13 @@
 import { supabase } from "../lib/supabase";
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "");
+const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const pointsToLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(
+  configuredApiBaseUrl || "",
+);
+const apiBaseUrl = import.meta.env.PROD
+  ? configuredApiBaseUrl && !pointsToLocalhost
+    ? configuredApiBaseUrl.replace(/\/+$/, "")
+    : "/api"
+  : (configuredApiBaseUrl || "http://localhost:8080/api").replace(/\/+$/, "");
 
 export async function api<T = Record<string, any>>(
   path: string,
@@ -8,7 +16,7 @@ export async function api<T = Record<string, any>>(
 ): Promise<T> {
   if (!apiBaseUrl) {
     throw new Error(
-      "The Playbit API is not configured. Set VITE_API_BASE_URL to your deployed backend URL in Vercel, then redeploy.",
+      "The Playbit API is not configured. Set VITE_API_BASE_URL to your deployed backend URL, then redeploy.",
     );
   }
   const session = (await supabase?.auth.getSession())?.data.session;

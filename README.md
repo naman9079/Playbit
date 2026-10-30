@@ -24,8 +24,8 @@ Vercel serves the Vite frontend. The Java Spring Boot API is a separate service 
 2. In **Settings → Environment Variables**, add these variables to **Production** and **Preview**:
    - `VITE_SUPABASE_URL` — the Supabase project URL.
    - `VITE_SUPABASE_ANON_KEY` — the Supabase anon/publishable key. This is a browser-visible public key; never use a service-role key here.
-   - `VITE_API_BASE_URL` — the deployed backend’s HTTPS URL ending in `/api`, for example `https://playbit-api.example.com/api`.
-3. Deploy the backend separately using `backend/Dockerfile` or the included `render.yaml` Blueprint. Configure its `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`, `SUPABASE_URL`, and `CORS_ORIGINS`. The container accepts JDBC URLs or standard `postgresql://`/`postgres://` URLs; provide the database username and password in their separate fields. Set `CORS_ORIGINS` to the exact Vercel site origin (for example `https://your-project.vercel.app`); do not include a trailing slash. Keep database credentials only on the backend host.
+   The included Vercel rewrite proxies `/api/*` to the Render service, so leave `VITE_API_BASE_URL` unset in Vercel. For a direct browser-to-backend connection instead, set it to the deployed backend’s HTTPS URL ending in `/api` and configure backend CORS.
+3. Deploy the backend separately using `backend/Dockerfile` or the included `render.yaml` Blueprint. Configure its `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD`, and `SUPABASE_URL`. The container accepts JDBC URLs or standard `postgresql://`/`postgres://` URLs; provide the database username and password in their separate fields. Keep database credentials only on the backend host.
 4. In Supabase **Authentication → URL Configuration**, set the production Site URL to the Vercel origin and add `https://your-project.vercel.app/play` to the redirect URL allowlist. Add the corresponding Preview URL patterns if preview deployments need email confirmation redirects.
 5. Redeploy the frontend after adding or changing the variables. Vite embeds `VITE_` values during the build, so changing them does not update an existing deployment.
 
