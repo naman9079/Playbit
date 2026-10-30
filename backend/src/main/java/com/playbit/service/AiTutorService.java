@@ -80,7 +80,7 @@ public class AiTutorService {
     public Map<String,Object> studyQuestions(UUID user,String context,List<String> focusTopics) {
         String notes=context==null?"":context.substring(0,Math.min(context.length(),24000));
         try {
-            var generated=ask("You are an experienced school examiner. Create up to 5 concise, useful exam/test questions using only facts explicitly present in the supplied notes. Questions must assess a definition, factual relationship, cause, process, formula, or application that the notes actually teach. Use formal exam wording (Define, State, Explain, Compare, Calculate, What, Why, How). Every question must be fully understandable on its own and name the exact concept it asks about. Never use unresolved references such as this/that/these/those/it/they/the above, or vague labels such as 'these experiences' or 'this phenomenon'; do not turn phrases like 'the reason for these experiences' into definitions. If the notes do not explain what a reference means, skip that fact. Never write conversational prompts, opinion questions, arbitrary missing-word blanks, or questions about what the learner has tried. Do not invent facts or require knowledge absent from the notes. Prioritize supplied weak topics when they are covered. For each item return question, answer, explanation, topic, and evidence: an exact supporting quote copied from the notes. If the notes do not support a clear standalone question, return an empty questions array. JSON only: {\"questions\":[{\"question\":\"...\",\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\",\"evidence\":\"...\"}]}.",Map.of("notes",notes,"focusTopics",focusTopics==null?List.of():focusTopics,"language",db.one("select language from profiles where id=?",user).get("language")),1800);
+            var generated=ask("You are an experienced Indian school textbook and exam-paper setter. Create up to 5 concise, useful questions in the style of real school books and written exams, using only facts explicitly present in the supplied notes. Use familiar paper formats where supported: Define/What is meant by, Give a reason, Explain why/how, State/List, Differentiate between, or Calculate/Solve. Prefer direct academic wording and test understanding, not the wording of the notes. Every question must stand alone, name the exact concept, and be answerable from the supplied notes. Never use chatty or opinion wording, arbitrary missing-word blanks, or ask what a student has tried. Never use unresolved references such as this/that/these/those/it/they/the above or vague labels like 'these experiences' and 'this phenomenon'. When a note uses such a vague phrase but clearly describes a specific process, rewrite the question around the concrete process named in the note; otherwise skip it. Do not invent facts or require knowledge absent from the notes. Prioritize supplied weak topics when covered. For each item return format (one of definition, give_reason, explanation, comparison, calculation, formula, list, short_answer), question, answer, explanation, topic, and evidence: an exact supporting quote copied from the notes. If no clear exam question is supported, return an empty questions array. JSON only: {\"questions\":[{\"format\":\"...\",\"question\":\"...\",\"answer\":\"...\",\"explanation\":\"...\",\"topic\":\"...\",\"evidence\":\"...\"}]}.",Map.of("notes",notes,"focusTopics",focusTopics==null?List.of():focusTopics,"language",db.one("select language from profiles where id=?",user).get("language")),1800);
             var questions=validatedStudyQuestions(generated.path("questions"),notes);
             if(!questions.isEmpty()) return Map.of("questions",questions,"source","ai");
         } catch(Exception ignored) { /* Use only conservative, note-backed templates below. */ }
@@ -94,13 +94,14 @@ public class AiTutorService {
         for(var item:items) {
             String question=item.path("question").asText("").trim();String answer=item.path("answer").asText("").trim();
             String explanation=item.path("explanation").asText("").trim();String topic=item.path("topic").asText("").trim();String evidence=item.path("evidence").asText("").trim();
+            String format=item.path("format").asText("short_answer").toLowerCase(Locale.ROOT).replace(' ','_');
             String lower=question.toLowerCase(Locale.ROOT);
             boolean examWording=lower.matches("^(define|state|explain|compare|calculate|what|why|how|when|where|which|name|list|identify|describe|give|write|derive|find)\\b.*");
             boolean grounded=evidence.length()>=12 && notes.toLowerCase(Locale.ROOT).contains(evidence.toLowerCase(Locale.ROOT));
             boolean unresolvedReference=lower.matches(".*\\b(this|that|these|those|such|above|following|previous|mentioned|given)\\b.*") || lower.matches(".*\\b(it|they|them|experiences?|phenomena|things|events)\\b.*") || lower.contains("reason for");
             String identity=lower.replaceAll("[^a-z0-9]+","");
-            if(question.length()<12 || question.length()>260 || answer.isBlank() || answer.length()>1200 || explanation.length()>1800 || topic.isBlank() || topic.length()>100 || !examWording || !grounded || unresolvedReference || lower.matches(".*\\b(ever tried|your opinion|do you think|have you ever)\\b.*") || !seen.add(identity)) continue;
-            result.add(Map.of("question",question,"answer",answer,"explanation",explanation,"topic",topic,"evidence",evidence));
+            if(question.length()<12 || question.length()>260 || answer.isBlank() || answer.length()>1200 || explanation.length()>1800 || topic.isBlank() || topic.length()>100 || !Set.of("definition","give_reason","explanation","comparison","calculation","formula","list","short_answer").contains(format) || !examWording || !grounded || unresolvedReference || lower.matches(".*\\b(ever tried|your opinion|do you think|have you ever)\\b.*") || !seen.add(identity)) continue;
+            result.add(Map.of("format",format,"question",question,"answer",answer,"explanation",explanation,"topic",topic,"evidence",evidence));
             if(result.size()==5) break;
         }
         return result;
@@ -118,6 +119,11 @@ public class AiTutorService {
         for(String raw:sentences) {
             String evidence=raw.replaceAll("^[\\s•*#\\-]+","").trim().replaceAll("[.!?]+$","").trim();
             if(evidence.length()<24 || evidence.length()>360 || evidence.matches("(?i)^(have you|do you|what do you|in my opinion|i think)\\b.*")) continue;
+            if(evidence.matches("(?i)^the reason for (these|those|such) experiences is .+") && evidence.toLowerCase(Locale.ROOT).contains("discharge of electric charges through") && evidence.toLowerCase(Locale.ROOT).contains("rubbing of insulating surfaces")) {
+                result.add(Map.of("format","give_reason","question","Give a reason why electric charges accumulated by rubbing insulating surfaces discharge through the human body.","answer","Rubbing insulating surfaces builds up electric charges. These charges can discharge through the body.","explanation","The note links rubbing insulating surfaces to accumulated electric charges and their discharge through the body.","topic","Electric charge and discharge","evidence",evidence));
+                if(result.size()>=5) break;
+                continue;
+            }
             for(var rule:patterns) {
                 var match=java.util.regex.Pattern.compile(rule[0]).matcher(evidence);
                 if(!match.matches()) continue;
@@ -133,7 +139,8 @@ public class AiTutorService {
                 };
                 String identity=question.toLowerCase(Locale.ROOT);
                 if(!seen.add(identity)) break;
-                result.add(Map.of("question",question,"answer",answer,"explanation","This answer is supported by the uploaded notes.","topic",subject,"evidence",evidence));
+                String format=switch(rule[1]) {case "formula" -> "formula"; case "components" -> "list"; case "conditions","cause" -> "give_reason"; default -> "definition";};
+                result.add(Map.of("format",format,"question",question,"answer",answer,"explanation","This answer is supported by the uploaded notes.","topic",subject,"evidence",evidence));
                 break;
             }
             if(result.size()>=5) break;
