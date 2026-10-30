@@ -109,7 +109,8 @@ public class OnlineQuestionSearchService {
             String original = lines[i].trim().replaceAll("^[\\s•*#]+", "");
             if (original.length() < 20 || original.length() > 700) continue;
             String stem = original.replaceFirst("(?i)^(?:(?:question|q)\\.?\\s*)?\\d{1,3}[.)\\]:-]\\s*", "").trim();
-            boolean hasQuestionShape = stem.endsWith("?") || stem.matches("(?is).*_{3,}.*") || QUESTION_START.matcher(stem).matches();
+            boolean blankMarker = stem.matches("(?is).*_{3,}.*") || stem.matches("(?is).*(?:\\\\_\\s*){3,}.*");
+            boolean hasQuestionShape = stem.endsWith("?") || blankMarker || QUESTION_START.matcher(stem).matches();
             boolean markLabel = stem.matches("(?is).{20,}\\s*\\[\\s*\\d+\\s*(?:marks?|points?)\\s*].*");
             boolean followedByOptions = i + 1 < lines.length && OPTION_LINE.matcher(lines[i + 1].trim()).matches();
 

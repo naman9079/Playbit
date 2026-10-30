@@ -172,7 +172,8 @@ export default function Study() {
       }));
       setData((previous) => ({ ...previous, cards: [...previous.cards, ...cards], questionHistory: [...previous.questionHistory, ...questions].slice(-40) }));
     } catch (error) {
-      setChatError(error instanceof Error ? error.message : "Could not make flashcards from these notes.");
+      setTab("quiz");
+      setChatError(error instanceof Error ? error.message : "Could not find questions in the online sources.");
     } finally { setDeckBusy(false); }
   }
 
@@ -203,7 +204,7 @@ export default function Study() {
     </section>
 
     <div className="study-tabs" role="tablist" aria-label="Study tools">
-      {([["chat", MessageCircle, "Tutor chat"], ["quiz", Brain, "Adaptive quiz"], ["cards", RotateCcw, "Flashcards"], ["heatmap", Flame, "Weak topics"]] as const).map(([id, Icon, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}><Icon size={17}/>{label}{id === "cards" && dueCards.length > 0 && <span className="study-count">{dueCards.length}</span>}</button>)}
+      {([["chat", MessageCircle, "Tutor chat"], ["quiz", Brain, "Adaptive quiz"], ["cards", RotateCcw, "Flashcards"], ["heatmap", Flame, "Weak topics"]] as const).map(([id, Icon, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => { setTab(id); setChatError(""); }}><Icon size={17}/>{label}{id === "cards" && dueCards.length > 0 && <span className="study-count">{dueCards.length}</span>}</button>)}
     </div>
 
     {chatError && <div className="study-error" role="alert"><XCircle size={18}/>{chatError}<button aria-label="Dismiss" onClick={() => setChatError("")}><XCircle size={15}/></button></div>}
