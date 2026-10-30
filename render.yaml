@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: playbit-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: backend/Dockerfile
+    dockerContext: backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_USERNAME
+        sync: false
+      - key: DATABASE_PASSWORD
+        sync: false
+      - key: SUPABASE_URL
+        value: https://wwekwmfjckgghbewptly.supabase.co
+      - key: CORS_ORIGINS
+        value: https://plabit.vercel.app
