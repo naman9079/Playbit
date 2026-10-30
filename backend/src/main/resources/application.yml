@@ -37,9 +37,9 @@ playbit:
     recovery: 20
     bot-daily-limit: 10
   ai:
-    base-url: ${AI_BASE_URL:https://api.openai.com/v1}
+    base-url: ${AI_BASE_URL:https://generativelanguage.googleapis.com/v1beta}
     key: ${AI_API_KEY:}
-    model: ${AI_MODEL:gpt-4.1-mini}
+    model: ${AI_MODEL:gemini-3.1-flash-lite}
     admin-ids: ${AI_ADMIN_IDS:}
   search:
     tavily-key: ${TAVILY_API_KEY:}

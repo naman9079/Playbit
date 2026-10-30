@@ -6,7 +6,7 @@ A competitive study companion built for MNIT Jaipur’s AI Study Companion probl
 
 ## Start here
 
-The source is implemented. The Supabase URL and user-supplied public anon key are configured in the gitignored `frontend/.env.local`; the public Auth settings endpoint confirmed email sign-in is enabled. **The backend still needs the database password and connection details** from the Supabase **Connect** panel. No AI provider key is configured; AI assistance will use the verified deterministic fallback. Never put database credentials in frontend variables.
+The source is implemented. The Supabase URL and user-supplied public anon key are configured in the gitignored `frontend/.env.local`; the public Auth settings endpoint confirmed email sign-in is enabled. **The backend still needs the database password and connection details** from the Supabase **Connect** panel. Never put database credentials or AI API keys in frontend variables.
 
 1. Copy `.env.example` to `.env` in the repository root. Supply `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` from your Supabase **Connect** panel. Use the direct connection or **session** pooler with SSL; transaction pooling is unsuitable for migrations. The backend role needs migration privileges and access through RLS (the project database owner works for a hackathon).
 2. Supply `VITE_SUPABASE_ANON_KEY` (the existing public anon/publishable key) and retain the supplied project URL. The backend **never** uses an anon key as its signing secret.
@@ -14,6 +14,12 @@ The source is implemented. The Supabase URL and user-supplied public anon key ar
 4. In Supabase Auth, enable email/password sign-up, configure email confirmation as desired, and add `http://localhost:5173/play` (and the production equivalent) to redirect URLs. Set the site URL to your frontend origin.
 5. Start the backend. Flyway baselines at version 0 if Supabase has installed helper functions in the otherwise empty `public` schema, then installs schema, seed data, and automatic browser lockdown. **Then run `database/supabase-security.sql` in Supabase SQL Editor** to authorize participant match notifications and private presence. Leave the questions, attempts, XP, and reports tables inaccessible to browser queries.
 6. Start the frontend and register a real user. Complete the profile and subject placement. Play a bot round and inspect the stored report.
+
+### AI topic explanations (Google Gemini)
+
+Playbit is configured to use Google's Gemini API with `gemini-3.1-flash-lite` for study explanations and tutoring. Google currently lists free input/output pricing for this model, subject to free-tier quotas and availability. Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/app/apikey), then set the backend-only `AI_API_KEY` in your local `.env` and in Render's `playbit-api` service environment. The default `AI_BASE_URL` and `AI_MODEL` are already in `.env.example` and `render.yaml`. Redeploy the backend after adding the key. Keep it secret; never use a `VITE_` variable for it.
+
+Study material excerpts are sent from the browser to Playbit's backend and then to Google to produce explanations. Google's Gemini free-tier terms state submitted data may be used to improve Google products. Do not upload private or sensitive material if you do not accept that policy. Free-tier quotas can change; when they are reached, AI explanations may temporarily fail. See [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing) and [Gemini API keys](https://ai.google.dev/gemini-api/docs/api-key).
 
 ## Deploy the web app on Vercel
 
@@ -124,7 +130,7 @@ Never copy `.env`, `.tools`, database data, or test JWTs into the production ima
 
 - Supabase account creation/email, the actual project's JWT signing configuration, hosted database writes, Realtime presence/events, and a live AI provider need the missing credentials and a live verification run. No deployment is claimed.
 - Questions and verified explanations currently use English. The profile stores Hindi as a preference, but a translated bank is not implemented.
-- AI uses a conservative verified-template workflow. It does not provide unrestricted generated tutoring prose or silently publish free-form questions. With no AI key, deterministic explanations and recovery remain fully functional.
+- AI uses a conservative verified-template workflow. It does not silently publish free-form questions. Topic explanations and tutoring require the backend Gemini key; without it, non-AI gameplay and recovery remain functional.
 - Public profile statistics are limited to gameplay fields. Authentication secrets stay server-side. This MVP has no admin UI, password reset UI, moderation, or sophisticated anti-collusion system.
 - The bot cap protects basic XP farming; solo/recovery are educational practice and have no daily XP cap. A repeated recovery request cannot award duplicate XP, but successive completed games can produce further recovery sessions.
 - Match history/progress charts show the most recent 20 rounds; the history API supports pagination. XP history returns the last 30 events. A timeout counts as an incorrect attempt with 15 seconds response time. Overall profile win percentage uses all non-diagnostic games as its denominator.

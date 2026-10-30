@@ -27,6 +27,9 @@ public class AiTutorService {
     }
     private com.fasterxml.jackson.databind.JsonNode ask(String instruction,Object data,int maxTokens) throws Exception {
         if(key.isBlank()) throw new IllegalStateException("AI is not configured");
+        if(base.toLowerCase(Locale.ROOT).contains("generativelanguage.googleapis.com")) {
+            return askGemini(instruction,data,maxTokens);
+        }
         var body=Map.of("model",model,"max_completion_tokens",maxTokens,"response_format",Map.of("type","json_object"),"messages",List.of(Map.of("role","system","content",instruction),Map.of("role","user","content",mapper.writeValueAsString(data))));
         String endpoint=base.replaceAll("/+$","")+"/chat/completions";
         var request=HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(60)).header("Authorization","Bearer "+key).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build();
@@ -38,6 +41,28 @@ public class AiTutorService {
         String content=choices.get(0).path("message").path("content").asText();
         if(content.isBlank()) throw new IllegalStateException("AI response was empty");
         return mapper.readTree(content);
+    }
+    private com.fasterxml.jackson.databind.JsonNode askGemini(String instruction,Object data,int maxTokens) throws Exception {
+        var body=Map.of(
+            "systemInstruction",Map.of("parts",List.of(Map.of("text",instruction))),
+            "contents",List.of(Map.of("role","user","parts",List.of(Map.of("text",mapper.writeValueAsString(data))))),
+            "generationConfig",Map.of("maxOutputTokens",maxTokens,"responseMimeType","application/json","temperature",0.2,
+                "thinkingConfig",Map.of("thinkingLevel","minimal"))
+        );
+        String endpoint=base.replaceAll("/+$","")+"/models/"+model+":generateContent";
+        var request=HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(60))
+            .header("x-goog-api-key",key).header("Content-Type","application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body))).build();
+        HttpResponse<String> response;
+        try(var http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()) { response=http.send(request,HttpResponse.BodyHandlers.ofString()); }
+        if(response.statusCode()!=200) throw new AiProviderException(response.statusCode());
+        var candidates=mapper.readTree(response.body()).path("candidates");
+        if(!candidates.isArray() || candidates.isEmpty()) throw new IllegalStateException("Gemini returned no candidate");
+        var parts=candidates.get(0).path("content").path("parts");
+        var content=new StringBuilder();
+        if(parts.isArray()) for(var part:parts) if(part.hasNonNull("text")) content.append(part.path("text").asText());
+        if(content.isEmpty()) throw new IllegalStateException("Gemini response was empty");
+        return mapper.readTree(content.toString());
     }
     public Map<String,Object> hint(UUID user,UUID match,UUID question) {
         reports.get(user,match); // A tutor can never leak answers during a live round.
@@ -113,10 +138,10 @@ public class AiTutorService {
         } catch(AiProviderException ex) {
             log.warn("Topic explanation provider returned HTTP {}",ex.status);
             String message=switch(ex.status) {
-                case 400 -> "The AI provider rejected the request. Check that AI_MODEL is an enabled chat model and supports JSON responses.";
+                case 400 -> "Google Gemini rejected the request. Check that AI_API_KEY is valid and AI_MODEL is enabled for your project.";
                 case 401,403 -> "The AI provider rejected AI_API_KEY or this key is not allowed to use AI_MODEL.";
                 case 404 -> "The AI endpoint or model was not found. Check AI_BASE_URL and copy the exact model ID into AI_MODEL.";
-                case 429 -> "The AI provider rate limit or account credits were exceeded. Check your AgentRouter quota and billing.";
+                case 429 -> "The AI provider free-tier rate limit or quota was reached. Wait and try again, or check the provider's usage limits.";
                 default -> "The AI provider returned an error (HTTP "+ex.status+"). Check its dashboard and try again.";
             };
             throw new ApiException(503,message);
@@ -125,7 +150,7 @@ public class AiTutorService {
             throw new ApiException(504,"The AI provider took too long to respond. Try a smaller PDF excerpt or choose a faster model.");
         } catch(Exception ex) {
             log.warn("Topic explanation request failed: {}",ex.getClass().getSimpleName());
-            throw new ApiException(503,"The AI provider returned an unreadable response. Check that AI_MODEL supports OpenAI-compatible chat completions with JSON output.");
+            throw new ApiException(503,"The AI provider returned an unreadable response. Check the Gemini model ID and its JSON output support.");
         }
     }
 }
