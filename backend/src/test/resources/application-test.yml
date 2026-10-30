@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:playbit;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ''
+playbit:
+  jwt-secret: this-is-a-test-only-signing-key-with-at-least-32-bytes
+logging:
+  level:
+    root: WARN

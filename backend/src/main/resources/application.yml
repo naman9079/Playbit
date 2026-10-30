@@ -1,0 +1,36 @@
+server:
+  port: ${PORT:8080}
+spring:
+  flyway:
+    # Supabase may create helper functions in public before the first app migration.
+    # Baseline at 0 so V1 still creates the Playbit schema and seed migrations run.
+    baseline-on-migrate: true
+    baseline-version: 0
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/playbit}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:}
+    hikari:
+      maximum-pool-size: 8
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+playbit:
+  supabase-url: ${SUPABASE_URL:https://wwekwmfjckgghbewptly.supabase.co}
+  jwt-secret: ${SUPABASE_JWT_SECRET:}
+  cors-origins: ${CORS_ORIGINS:http://localhost:5173}
+  xp:
+    completion: 30
+    correct: 10
+    win: 50
+    recovery: 20
+    bot-daily-limit: 10
+  ai:
+    base-url: ${AI_BASE_URL:https://api.openai.com/v1}
+    key: ${AI_API_KEY:}
+    model: ${AI_MODEL:gpt-4.1-mini}
+    admin-ids: ${AI_ADMIN_IDS:}
