@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.*;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import com.playbit.repository.Db;
 import com.playbit.service.MatchService;
+import com.playbit.service.MatchTicker;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -28,6 +29,8 @@ import static org.mockito.Mockito.*;
 class ApiIntegrationTest {
     @Autowired MockMvc mvc; @Autowired ObjectMapper mapper; @Autowired Db db; @Autowired MatchService matches;
     @MockitoBean Clock clock;
+    // Tests advance a fake clock and invoke tickAll explicitly; exclude wall-clock ticks.
+    @MockitoBean MatchTicker ticker;
     UUID alice,bob;Instant now;
     @BeforeEach void setup() throws Exception {now=Instant.parse("2030-01-01T12:00:00Z");when(clock.instant()).thenAnswer(i->now);when(clock.getZone()).thenReturn(ZoneOffset.UTC);alice=UUID.randomUUID();bob=UUID.randomUUID();profile(alice);profile(bob);}
     MockHttpServletRequestBuilder as(MockHttpServletRequestBuilder request,UUID user) {return request.with(jwt().jwt(j->j.subject(user.toString()).claim("role","authenticated").audience(List.of("authenticated"))));}
@@ -67,6 +70,28 @@ class ApiIntegrationTest {
         now=MatchService.instant(first.get("deadline_at"));mvc.perform(as(body(post("/api/matches/"+id+"/answers"),payload),alice)).andExpect(status().isConflict());finish(id);
         var report=request(get("/api/reports/"+id),alice);assertEquals(5,report.path("questions").size());assertEquals(1,report.path("summary").path("correct").asInt());assertEquals(117,report.path("summary").path("score").asInt());assertEquals(1000,report.path("summary").path("rating_after").asInt());
         int total=Db.integer(db.one("select total_xp from profiles where id=?",alice),"total_xp");matches.tickAll();request(get("/api/matches/"+id+"/results"),alice);assertEquals(total,Db.integer(db.one("select total_xp from profiles where id=?",alice),"total_xp"));assertEquals(1,db.count("select count(*) from xp_events where user_id=? and source_id=?",alice,UUID.fromString(id)));
+    }
+    @Test void roundsAdvanceWithoutTickerAndSettledRoundsAreNotWrittenAgain() throws Exception {
+        assessed(alice);
+        String id=start(alice,"solo","math").path("id").asText();
+        UUID match=UUID.fromString(id);
+        var rounds=questions(id);
+        now=MatchService.instant(rounds.getFirst().get("deadline_at"));
+        // The next question is available at its scheduled boundary, even before settlement.
+        var state=request(get("/api/matches/"+id),alice);
+        assertEquals(rounds.get(1).get("id").toString(),state.path("question").path("id").asText());
+        assertFalse(state.path("question").has("correct_answer"));
+        matches.tickAll();
+        int version=Db.integer(db.one("select version from matches where id=?",match),"version");
+        assertEquals(1,db.count("select settled_rounds from matches where id=?",match));
+        matches.tickAll();
+        assertEquals(version,Db.integer(db.one("select version from matches where id=?",match),"version"));
+        assertEquals(1,db.count("select count(*) from question_attempts where match_id=?",match));
+        // Catch up across multiple deadlines and finish exactly once.
+        finish(id);
+        assertEquals(5,db.count("select settled_rounds from matches where id=?",match));
+        assertEquals(5,db.count("select count(*) from question_attempts where match_id=?",match));
+        assertEquals("completed",request(get("/api/matches/"+id),alice).path("status").asText());
     }
     @Test void freshQuestionsRecoveryReportsAndLeaderboardPersist() throws Exception {
         assessed(alice);String id=start(alice,"solo","quant").path("id").asText();answerAll(alice,id,true);finish(id);

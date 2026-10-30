@@ -9,6 +9,7 @@ export function useMatch(id: string) {
   const query = useQuery({
     queryKey: ["match", id],
     queryFn: () => api(`/matches/${id}`),
+    staleTime: 0,
     refetchInterval: (q) =>
       q.state.data?.status === "completed" ||
       q.state.data?.status === "cancelled"
@@ -33,7 +34,10 @@ export function useMatch(id: string) {
           filter: `id=eq.${id}`,
         },
         () => {
-          void cache.invalidateQueries({ queryKey: ["match", id] });
+          void cache.invalidateQueries(
+            { queryKey: ["match", id] },
+            { cancelRefetch: false },
+          );
         },
       )
       .subscribe(async (status) => {

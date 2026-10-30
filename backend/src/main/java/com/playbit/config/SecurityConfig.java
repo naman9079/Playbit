@@ -35,6 +35,7 @@ public class SecurityConfig {
         cors.setAllowedOrigins(List.of(origins.split(",")));
         cors.setAllowedMethods(List.of("GET", "POST", "PUT", "OPTIONS"));
         cors.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        cors.setMaxAge(3600L);
         var source = new UrlBasedCorsConfigurationSource(); source.registerCorsConfiguration("/**", cors);
         return http.csrf(c -> c.disable()).cors(c -> c.configurationSource(source))
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

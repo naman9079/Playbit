@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bot,
   Swords,
@@ -54,6 +54,7 @@ const modes = [
 ];
 export default function Play() {
   const navigate = useNavigate();
+  const cache = useQueryClient();
   const [params] = useSearchParams();
   const { subject, setSubject } = usePreferences();
   const [mode, setMode] = useState(
@@ -78,8 +79,7 @@ export default function Play() {
   } = useQuery({ queryKey: ["me"], queryFn: () => api("/me") });
   const curriculum = useQuery({
     queryKey: ["curriculum", subject, classLevel],
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
+    staleTime: 5 * 60 * 1000,
     queryFn: () =>
       api<{
         classLevels: number[];
@@ -109,12 +109,17 @@ export default function Play() {
           difficulty,
         },
       ),
-    onSuccess: (r) =>
-      navigate(r.status === "waiting" ? `/room/${r.id}` : `/arena/${r.id}`),
+    onSuccess: (r) => {
+      cache.setQueryData(["match", r.id], r);
+      navigate(r.status === "waiting" ? `/room/${r.id}` : `/arena/${r.id}`);
+    },
   });
   const join = useMutation({
     mutationFn: () => api("/rooms/join", "POST", { code: code.toUpperCase() }),
-    onSuccess: (r) => navigate(`/room/${r.id}`),
+    onSuccess: (r) => {
+      cache.setQueryData(["match", r.id], r);
+      navigate(`/room/${r.id}`);
+    },
   });
   const history = useQuery({
     queryKey: ["history"],

@@ -16,7 +16,13 @@ public class ProfileService {
             for(var subject:db.rows("select id from subjects")) db.run("insert into user_subject_ratings(user_id,subject_id) values(?,?)",id,subject.get("id"));
         }
     }
-    @Transactional public Map<String,Object> me(UUID id) { db.one("select id from system_locks where id=1 for update"); ensure(id); return get(id); }
+    @Transactional public Map<String,Object> me(UUID id) {
+        // Existing profiles are read-only; do not queue page loads behind match settlement.
+        if(db.count("select count(*) from profiles where id=?",id)==0) {
+            db.one("select id from system_locks where id=1 for update"); ensure(id);
+        }
+        return get(id);
+    }
     public Map<String,Object> get(UUID id) {
         var result=new LinkedHashMap<>(db.one("select * from profiles where id=?",id));
         result.put("subjects",json.read(Db.str(result,"preferred_subjects")));

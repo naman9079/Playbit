@@ -141,9 +141,11 @@ export default function Arena() {
         questionId: question.id,
         answer,
       }),
-    onSuccess: () => {
-      setLocalAccepted(true);
-      void cache.invalidateQueries({ queryKey: ["match", id] });
+    onSuccess: (result) => {
+      // An answer response may arrive after the next round is already displayed.
+      if (cache.getQueryData<any>(["match", id])?.question?.id === result.questionId)
+        setLocalAccepted(true);
+      void cache.invalidateQueries({ queryKey: ["match", id] }, { cancelRefetch: false });
     },
   });
   useEffect(() => {
@@ -203,7 +205,10 @@ export default function Arena() {
     }
     if (boundaryRefreshFor.current === boundaryKey) return;
     boundaryRefreshFor.current = boundaryKey;
-    void cache.invalidateQueries({ queryKey: ["match", id], exact: true });
+    void cache.invalidateQueries(
+      { queryKey: ["match", id], exact: true },
+      { cancelRefetch: false },
+    );
   }, [boundaryKey, boundaryReached, cache, id]);
   if (isPending) return <Loading />;
   if (error) return <ErrorBox error={error} />;

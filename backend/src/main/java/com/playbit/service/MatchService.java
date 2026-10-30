@@ -71,17 +71,17 @@ public class MatchService {
     @Transactional(readOnly=true) public Map<String,Object> get(UUID user,UUID id) { return state(user,id); }
     public Map<String,Object> state(UUID user,UUID id) {
         participant(user,id); var match=new LinkedHashMap<>(db.one("select * from matches where id=?",id)); Instant now=clock.instant();
-        match.put("serverNow",now); match.put("roundSeconds",ROUND_SECONDS); match.put("maxSpeedBonus",20); match.put("correctPoints",100);
+        match.put("roundSeconds",ROUND_SECONDS); match.put("maxSpeedBonus",20); match.put("correctPoints",100);
         match.put("chapter_name",curriculum.chapterName(Db.str(match,"subject_id"),nullableInteger(match.get("class_level")),(String)match.get("chapter_id")));
         match.put("players",db.rows("select p.*,u.display_name,u.username,u.avatar_url from match_players p join profiles u on u.id=p.user_id where p.match_id=? order by u.id",id));
-        var current=db.rows("select q.id,q.question_text,q.options_json,q.topic_id,q.difficulty,mq.question_order,mq.starts_at,mq.deadline_at from match_questions mq join questions q on q.id=mq.question_id where mq.match_id=? and mq.starts_at<=? and mq.deadline_at>?",id,Timestamp.from(now),Timestamp.from(now));
+        var current=db.rows("select q.id,q.question_text,q.options_json,q.topic_id,q.difficulty,mq.question_order,mq.starts_at,mq.deadline_at,a.submitted_answer as submitted from match_questions mq join questions q on q.id=mq.question_id left join question_attempts a on a.match_id=mq.match_id and a.question_id=q.id and a.user_id=? where mq.match_id=? and mq.starts_at<=? and mq.deadline_at>?",user,id,Timestamp.from(now),Timestamp.from(now));
         if(!current.isEmpty() && Db.str(match,"status").equals("active")) {
             var q=new LinkedHashMap<>(current.getFirst()); q.put("options",json.read(Db.str(q,"options_json")));q.remove("options_json");
-            var attempts=db.rows("select submitted_answer from question_attempts where match_id=? and user_id=? and question_id=?",id,user,q.get("id"));
-            q.put("submitted",attempts.isEmpty()?null:attempts.getFirst().get("submitted_answer")); match.put("question",q);
+            match.put("question",q);
         } else match.put("question",null);
         var past=db.rows("select q.id,q.correct_answer,a.submitted_answer,a.is_correct,a.awarded_points from match_questions mq join questions q on q.id=mq.question_id left join question_attempts a on a.match_id=mq.match_id and a.question_id=q.id and a.user_id=? where mq.match_id=? and mq.deadline_at<=? order by mq.question_order",user,id,Timestamp.from(now));
-        match.put("feedback",past); return match;
+        // Timestamp at response preparation, excluding database work from the client countdown.
+        match.put("serverNow",clock.instant()); match.put("feedback",past); return match;
     }
     @Transactional public Map<String,Object> answer(UUID user,UUID id,Requests.Answer answer) {
         lock(); participant(user,id);
@@ -102,7 +102,7 @@ public class MatchService {
         Instant now=clock.instant(); Timestamp timestamp=Timestamp.from(now);
         var due=db.rows("""
             select m.id from matches m where m.status='active' and (
-              exists(select 1 from match_questions q where q.match_id=m.id and q.deadline_at<=?)
+              exists(select 1 from match_questions q where q.match_id=m.id and q.question_order>=m.settled_rounds and q.deadline_at<=?)
               or (m.mode='bot' and m.bot_score<>coalesce((
                 select sum(q.bot_points) from match_questions q where q.match_id=m.id and q.bot_answer_at<=?
               ),0))
@@ -115,19 +115,21 @@ public class MatchService {
     void tick(UUID id) {
         var m=db.one("select * from matches where id=?",id); if(!Db.str(m,"status").equals("active")) return;
         Instant now=clock.instant();
-        var players=db.rows("select * from match_players where match_id=? order by user_id",id);
-        var ended=db.rows("select mq.*,q.topic_id from match_questions mq join questions q on q.id=mq.question_id where mq.match_id=? and mq.deadline_at<=?",id,Timestamp.from(now));
+        int settled=Db.integer(m,"settled_rounds");
+        var ended=db.rows("select mq.* from match_questions mq where mq.match_id=? and mq.question_order>=? and mq.deadline_at<=? order by mq.question_order",id,settled,Timestamp.from(now));
         int botScore=Db.str(m,"mode").equals("bot")?db.count("select coalesce(sum(bot_points),0) from match_questions where match_id=? and bot_answer_at<=?",id,Timestamp.from(now)):0;
         if(ended.isEmpty() && botScore==Db.integer(m,"bot_score")) return;
-        for(var p:players) {
+        // Bot score changes alone do not require recalculating every human player's score.
+        for(var p:ended.isEmpty()?List.<Map<String,Object>>of():db.rows("select * from match_players where match_id=? order by user_id",id)) {
             UUID user=UUID.fromString(Db.str(p,"user_id"));
-            for(var q:ended) if(db.count("select count(*) from question_attempts where match_id=? and user_id=? and question_id=?",id,user,q.get("question_id"))==0)
-                db.run("insert into question_attempts(id,match_id,user_id,question_id,submitted_answer,is_correct,response_time_ms,awarded_points) values(?,?,?,?,?,false,15000,0)",UUID.randomUUID(),id,user,q.get("question_id"),"");
+            for(var q:ended)
+                db.run("insert into question_attempts(id,match_id,user_id,question_id,submitted_answer,is_correct,response_time_ms,awarded_points) select ?,?,?,?, ?,false,15000,0 where not exists (select 1 from question_attempts where match_id=? and user_id=? and question_id=?)",UUID.randomUUID(),id,user,q.get("question_id"),"",id,user,q.get("question_id"));
             int score=db.count("select coalesce(sum(a.awarded_points),0) from question_attempts a join match_questions mq on mq.match_id=a.match_id and mq.question_id=a.question_id where a.match_id=? and a.user_id=? and mq.deadline_at<=?",id,user,Timestamp.from(now));
             db.run("update match_players set score=? where match_id=? and user_id=?",score,id,user);
         }
-        db.run("update matches set bot_score=?,version=version+1 where id=?",botScore,id);
-        if(ended.size()==Db.integer(m,"question_count")) finish(m,botScore,now);
+        int completed=settled+ended.size();
+        db.run("update matches set bot_score=?,settled_rounds=?,version=version+1 where id=?",botScore,completed,id);
+        if(completed==Db.integer(m,"question_count")) finish(m,botScore,now);
     }
     void finish(Map<String,Object> m,int botScore,Instant now) {
         UUID id=UUID.fromString(Db.str(m,"id")); String mode=Db.str(m,"mode"),subject=Db.str(m,"subject_id");
