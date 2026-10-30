@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
-  BookOpenText, Bot, Brain, ChevronRight, Clock3, FileText,
+  BookOpenText, Bot, Brain, ChevronRight, FileText,
   Flame, Lightbulb, MessageCircle, RotateCcw, Send, Sparkles, Upload,
   XCircle,
 } from "lucide-react";
@@ -10,12 +10,12 @@ import { Button } from "../components/ui/button";
 import { extractStudyFile } from "../lib/study-import";
 
 type ChatMessage = { role: "user" | "assistant"; text: string; hint?: string };
-type Flashcard = { id: string; front: string; back: string; topic: string; sourceUrl?: string; sourceTitle?: string; dueAt: number; interval: number; ease: number };
+type TopicCard = { id: string; name: string; points: string[] };
 type StudyQuestion = { question: string; sourceTitle: string; sourceUrl: string; sourceDomain: string };
 type StudySource = { title: string; url: string; domain: string; snippet: string };
 type Mastery = Record<string, { correct: number; total: number }>;
-type StudyData = { title: string; notes: string; messages: ChatMessage[]; cards: Flashcard[]; questions: StudyQuestion[]; questionHistory: StudyQuestion[]; onlineSources: StudySource[]; onlineMessage: string; noteChunkIndex: number; mastery: Mastery };
-const empty: StudyData = { title: "", notes: "", messages: [], cards: [], questions: [], questionHistory: [], onlineSources: [], onlineMessage: "", noteChunkIndex: 0, mastery: {} };
+type StudyData = { title: string; notes: string; messages: ChatMessage[]; topicCards: TopicCard[]; questions: StudyQuestion[]; questionHistory: StudyQuestion[]; onlineSources: StudySource[]; onlineMessage: string; noteChunkIndex: number; mastery: Mastery };
+const empty: StudyData = { title: "", notes: "", messages: [], topicCards: [], questions: [], questionHistory: [], onlineSources: [], onlineMessage: "", noteChunkIndex: 0, mastery: {} };
 const storeKey = (userId: string) => `playbit-study-v2-${userId}`;
 const legacyStoreKey = (userId: string) => `playbit-study-v1-${userId}`;
 const clampText = (value: string) => value.slice(0, 120_000);
@@ -25,6 +25,25 @@ function suggestSearchQuery(title: string, notes: string) {
   const heading = notes.split(/\r?\n+/).map((line) => line.replace(/^[\s#\d.)-]+/, "").trim())
     .find((line) => line.length >= 4 && line.length <= 80 && /[a-z]/i.test(line) && !/^page\s+\d+$/i.test(line));
   return [filename, heading].filter(Boolean).join(" ").slice(0, 180);
+}
+
+function splitStudyNotes(notes: string, maxLength = 16_000) {
+  const chunks: string[] = [];
+  let remaining = notes.trim();
+  while (remaining.length > maxLength) {
+    let cut = remaining.lastIndexOf("\n", maxLength);
+    if (cut < maxLength * 0.55) cut = remaining.lastIndexOf(". ", maxLength);
+    if (cut < maxLength * 0.55) cut = remaining.lastIndexOf(" ", maxLength);
+    if (cut < maxLength * 0.55) cut = maxLength;
+    chunks.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+function topicKey(value: string) {
+  return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 export default function Study() {
@@ -39,8 +58,8 @@ export default function Study() {
   const [chatError, setChatError] = useState("");
   const [quiz, setQuiz] = useState<StudyQuestion | null>(null);
   const [quizBusy, setQuizBusy] = useState(false);
-  const [deckBusy, setDeckBusy] = useState(false);
-  const [cardShown, setCardShown] = useState(false);
+  const [topicBusy, setTopicBusy] = useState(false);
+  const [topicProgress, setTopicProgress] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -51,12 +70,12 @@ export default function Study() {
       if (saved) {
         const parsed = JSON.parse(saved) as Partial<StudyData>;
         const isSourced = (item: any) => typeof item?.sourceUrl === "string" && item.sourceUrl.startsWith("https://");
-        setData({ ...empty, ...parsed, questions: (parsed.questions ?? []).filter(isSourced), questionHistory: (parsed.questionHistory ?? []).filter(isSourced), cards: (parsed.cards ?? []).filter(isSourced) });
+        setData({ ...empty, ...parsed, topicCards: parsed.topicCards ?? [], questions: (parsed.questions ?? []).filter(isSourced), questionHistory: (parsed.questionHistory ?? []).filter(isSourced) });
         setSearchQuery(suggestSearchQuery(parsed.title ?? "", parsed.notes ?? ""));
       }
       else {
         const legacy = localStorage.getItem(legacyStoreKey(userId));
-        const migrated = legacy ? { ...empty, ...JSON.parse(legacy), cards: [], questions: [], mastery: {} } : empty;
+        const migrated = legacy ? { ...empty, ...JSON.parse(legacy), topicCards: [], questions: [], mastery: {} } : empty;
         setData(migrated);
         if (legacy) localStorage.setItem(storeKey(userId), JSON.stringify(migrated));
       }
@@ -72,7 +91,6 @@ export default function Study() {
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [data.messages, tab]);
 
-  const dueCards = useMemo(() => data.cards.filter((card) => card.dueAt <= Date.now()), [data.cards]);
   const topics = useMemo(() => Object.entries(data.mastery).sort((a, b) => {
     const scoreA = a[1].total ? a[1].correct / a[1].total : 0;
     const scoreB = b[1].total ? b[1].correct / b[1].total : 0;
@@ -87,7 +105,7 @@ export default function Study() {
       const extracted = await extractStudyFile(file);
       const text = clampText(extracted.replace(/\u0000/g, " ").trim());
       if (!text) throw new Error(`No selectable text was found in “${file.name}”. Scanned documents and images need OCR before upload.`);
-      setData((current) => ({ ...current, title: file.name, notes: text, messages: [], cards: [], questions: [], questionHistory: [], onlineSources: [], onlineMessage: "", noteChunkIndex: 0, mastery: {} }));
+      setData((current) => ({ ...current, title: file.name, notes: text, messages: [], topicCards: [], questions: [], questionHistory: [], onlineSources: [], onlineMessage: "", noteChunkIndex: 0, mastery: {} }));
       setSearchQuery(suggestSearchQuery(file.name, text));
       setChatError("");
     } catch (error) {
@@ -115,7 +133,7 @@ export default function Study() {
     if (!data.notes.trim()) throw new Error("Upload a chapter PDF or notes first.");
     const query = searchQuery.trim() || suggestSearchQuery(data.title, data.notes);
     if (!query) throw new Error("Enter the chapter name or topic to search for existing questions.");
-    const seenQuestions = [...data.questionHistory.map((item) => item.question), ...data.cards.map((card) => card.front)].slice(-40);
+    const seenQuestions = data.questionHistory.map((item) => item.question).slice(-40);
     const result = await api<{ questions: StudyQuestion[]; sources: StudySource[]; message?: string }>("/study/online-questions", "POST", { query, seenQuestions });
     setData((previous) => ({ ...previous, onlineSources: result.sources ?? [], onlineMessage: result.message ?? "" }));
     const seen = new Set(seenQuestions.map((item) => item.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()));
@@ -161,29 +179,37 @@ export default function Study() {
     } finally { setQuizBusy(false); }
   }
 
-  async function generateFlashcards() {
-    if (deckBusy || !data.notes.trim()) return;
-    setDeckBusy(true); setChatError("");
+  async function generateTopicCards() {
+    if (topicBusy || !data.notes.trim()) return;
+    const chunks = splitStudyNotes(data.notes);
+    setTopicBusy(true); setChatError(""); setTopicProgress(`Reading ${chunks.length} section${chunks.length === 1 ? "" : "s"} of your material…`);
+    setData((current) => ({ ...current, topicCards: [] }));
+    let summaryCount = 0;
     try {
-      const questions = await generateQuestions();
-      const cards = questions.map((item, index) => ({
-        id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
-        front: item.question, back: "Check the linked original page for its answer.", topic: searchQuery || "Online question", sourceUrl: item.sourceUrl, sourceTitle: item.sourceTitle, dueAt: Date.now(), interval: 0, ease: 2.5,
-      }));
-      setData((previous) => ({ ...previous, cards: [...previous.cards, ...cards], questionHistory: [...previous.questionHistory, ...questions].slice(-40) }));
+      for (let index = 0; index < chunks.length; index += 2) {
+        const batch = chunks.slice(index, index + 2);
+        setTopicProgress(`Explaining sections ${index + 1}–${index + batch.length} of ${chunks.length}…`);
+        const results = await Promise.all(batch.map((context) => api<{ topics: { name: string; points: string[] }[] }>("/study/topic-notes", "POST", { title: data.title || "Uploaded study material", context })));
+        const found = results.flatMap((result) => result.topics ?? []).filter((topic) => topic.name && topic.points?.length);
+        summaryCount += found.length;
+        setData((previous) => {
+          const byTopic = new Map(previous.topicCards.map((topic) => [topicKey(topic.name), topic]));
+          for (const topic of found) {
+            const key = topicKey(topic.name);
+            const existing = byTopic.get(key);
+            const points = [...new Set([...(existing?.points ?? []), ...topic.points])].slice(0, 6);
+            byTopic.set(key, { id: key, name: existing?.name ?? topic.name, points });
+          }
+          return { ...previous, topicCards: [...byTopic.values()] };
+        });
+      }
+      if (!summaryCount) throw new Error("No clear topics could be found in this text. Check that the PDF has selectable text, then try again.");
+      setTopicProgress("");
+      setTab("cards");
     } catch (error) {
-      setTab("quiz");
-      setChatError(error instanceof Error ? error.message : "Could not find questions in the online sources.");
-    } finally { setDeckBusy(false); }
-  }
-
-  function reviewCard(rating: "again" | "hard" | "good" | "easy") {
-    const card = dueCards[0]; if (!card) return;
-    const nextInterval = rating === "again" ? 0 : rating === "hard" ? Math.max(1, Math.round(card.interval * 1.2) || 1) : rating === "good" ? Math.max(1, Math.round(card.interval * card.ease) || 1) : Math.max(3, Math.round(card.interval * (card.ease + 0.5)) || 3);
-    const ease = Math.max(1.3, card.ease + (rating === "easy" ? 0.15 : rating === "hard" ? -0.15 : 0));
-    const dueAt = Date.now() + (nextInterval === 0 ? 60_000 : nextInterval * 24 * 60 * 60 * 1000);
-    setData((current) => ({ ...current, cards: current.cards.map((item) => item.id === card.id ? { ...item, dueAt, interval: nextInterval, ease } : item) }));
-    setCardShown(false);
+      setTopicProgress("");
+      setChatError(error instanceof Error ? error.message : "Could not explain the topics in this material.");
+    } finally { setTopicBusy(false); }
   }
 
   if (!ready) return <div className="empty">Loading your study desk…</div>;
@@ -191,7 +217,7 @@ export default function Study() {
     <div className="page-heading study-heading">
       <span className="eyebrow">YOUR PERSONAL STUDY SPACE</span>
       <h1>Learn it. Then own it.</h1>
-      <p>Bring your notes or syllabus. Your tutor, quizzes, and review cards will work from that material.</p>
+      <p>Bring your notes or syllabus. Your tutor, web questions, and simple topic cards work from your study material.</p>
     </div>
 
     <section className="study-source panel">
@@ -199,12 +225,12 @@ export default function Study() {
         <input ref={fileRef} hidden type="file" accept="*/*" onChange={(event) => { void importFile(event.target.files?.[0]); event.currentTarget.value = ""; }}/>
         <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload size={16}/> Upload notes</Button>
       </div>
-      <textarea aria-label="Paste notes or syllabus" value={data.notes} maxLength={120_000} onChange={(event) => { const notes = event.target.value; setData((current) => ({ ...current, title: current.title || "Pasted study notes", notes, cards: [], questions: [], questionHistory: [], onlineSources: [], onlineMessage: "", noteChunkIndex: 0, mastery: {} })); if (!searchQuery) setSearchQuery(suggestSearchQuery("Pasted study notes", notes)); setQuiz(null); }} placeholder="Or paste notes / a syllabus here… The tutor will use only this material to answer." />
-      <div className="study-source-foot"><span>{data.notes.length.toLocaleString()} / 120,000 characters · only the chapter search terms are sent to web search</span>{data.notes && <button className="study-text-button" onClick={() => { setData((current) => ({ ...current, title: "", notes: "", cards: [], questions: [], questionHistory: [], noteChunkIndex: 0, mastery: {}, messages: [] })); setSearchQuery(""); setQuiz(null); }}>Clear material</button>}</div>
+      <textarea aria-label="Paste notes or syllabus" value={data.notes} maxLength={120_000} onChange={(event) => { const notes = event.target.value; setData((current) => ({ ...current, title: current.title || "Pasted study notes", notes, topicCards: [], questions: [], questionHistory: [], onlineSources: [], onlineMessage: "", noteChunkIndex: 0, mastery: {} })); if (!searchQuery) setSearchQuery(suggestSearchQuery("Pasted study notes", notes)); setQuiz(null); }} placeholder="Or paste notes / a syllabus here… The tutor will use only this material to answer." />
+      <div className="study-source-foot"><span>{data.notes.length.toLocaleString()} / 120,000 characters · only chapter search terms are sent to web search</span>{data.notes && <button className="study-text-button" onClick={() => { setData((current) => ({ ...current, title: "", notes: "", topicCards: [], questions: [], questionHistory: [], noteChunkIndex: 0, mastery: {}, messages: [] })); setSearchQuery(""); setQuiz(null); }}>Clear material</button>}</div>
     </section>
 
     <div className="study-tabs" role="tablist" aria-label="Study tools">
-      {([["chat", MessageCircle, "Tutor chat"], ["quiz", Brain, "Adaptive quiz"], ["cards", RotateCcw, "Flashcards"], ["heatmap", Flame, "Weak topics"]] as const).map(([id, Icon, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => { setTab(id); setChatError(""); }}><Icon size={17}/>{label}{id === "cards" && dueCards.length > 0 && <span className="study-count">{dueCards.length}</span>}</button>)}
+      {([["chat", MessageCircle, "Tutor chat"], ["quiz", Brain, "Adaptive quiz"], ["cards", RotateCcw, "Flashcards"], ["heatmap", Flame, "Weak topics"]] as const).map(([id, Icon, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => { setTab(id); setChatError(""); }}><Icon size={17}/>{label}{id === "cards" && data.topicCards.length > 0 && <span className="study-count">{data.topicCards.length}</span>}</button>)}
     </div>
 
     {chatError && <div className="study-error" role="alert"><XCircle size={18}/>{chatError}<button aria-label="Dismiss" onClick={() => setChatError("")}><XCircle size={15}/></button></div>}
@@ -222,10 +248,10 @@ export default function Study() {
 
     {tab === "quiz" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><Brain size={21}/></span><div><strong>Questions from the web</strong><small>Exact question excerpts from public pages, with source links.</small></div></div><p className="study-search-note">Playbit searches existing exam and textbook pages. It does not generate or rewrite questions from your PDF.</p><form className="study-online-search" onSubmit={(event) => { event.preventDefault(); void searchOnlineQuestions(); }}><input aria-label="Chapter or topic to search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Chapter or topic, for example Class 8 · Linear Equations" maxLength={180}/><Button type="submit" disabled={!data.notes || !searchQuery.trim() || quizBusy}>{quizBusy ? "Searching the web…" : "Find questions"} <ChevronRight size={16}/></Button></form>{quiz ? <div className="study-question"><span className="eyebrow">FOUND ON {quiz.sourceDomain}</span><h2>{quiz.question}</h2><p className="study-question-source">Source: <a href={quiz.sourceUrl} target="_blank" rel="noreferrer">{quiz.sourceTitle}</a></p><p className="study-search-note">This is question text found on the linked page. Open it for the original context, answer key, and exam instructions.</p><Button variant="outline" disabled={quizBusy} onClick={() => void nextQuiz()}>{quizBusy ? "Searching the web…" : "Next question"} <ChevronRight size={16}/></Button></div> : <><div className="study-empty"><Brain size={28}/><h2>Find questions from your chapter.</h2><p>{data.onlineMessage || "Upload a chapter PDF, check the detected topic, and search for questions already published online."}</p><Button onClick={() => void searchOnlineQuestions()} disabled={!data.notes || quizBusy || !searchQuery.trim()}>{quizBusy ? "Searching the web…" : "Search online questions"} <ChevronRight size={17}/></Button></div>{data.onlineSources.length > 0 && <div className="study-online-sources"><strong>Search results</strong>{data.onlineSources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer"><span>{source.title}</span><small>{source.domain} · {source.snippet}</small></a>)}</div>}</>}</section>}
 
-    {tab === "cards" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><RotateCcw size={21}/></span><div><strong>Spaced-repetition cards</strong><small>Review exact questions found on linked web pages.</small></div><span className="study-online">{dueCards.length} DUE</span></div>{dueCards.length ? <div className="study-flashcard"><span className="eyebrow">{dueCards[0].topic}</span><h2>{cardShown ? dueCards[0].back : dueCards[0].front}</h2>{cardShown && dueCards[0].sourceUrl && <p className="study-question-source"><a href={dueCards[0].sourceUrl} target="_blank" rel="noreferrer">Open {dueCards[0].sourceTitle || "original source"} for its answer</a></p>}{cardShown ? <div className="study-ratings">{([ ["again", "Again"], ["hard", "Hard"], ["good", "Good"], ["easy", "Easy"]] as const).map(([rating, label]) => <button key={rating} onClick={() => reviewCard(rating)}>{label}</button>)}</div> : <Button onClick={() => setCardShown(true)}>Show source <ChevronRight size={16}/></Button>}<small><Clock3 size={13}/> {dueCards.length} card{dueCards.length === 1 ? "" : "s"} ready to review</small></div> : <div className="study-empty"><RotateCcw size={28}/><h2>{data.cards.length ? "All caught up." : "Build your first review deck."}</h2><p>{data.cards.length ? "Come back when the next card is due." : "Create cards from questions found on the web; answers stay on the original source pages."}</p><Button variant="outline" disabled={!data.notes || deckBusy} onClick={() => void generateFlashcards()}>{deckBusy ? "Searching online questions…" : data.cards.length ? "Add more online questions" : "Find questions for cards"} <ChevronRight size={17}/></Button></div>}</section>}
+    {tab === "cards" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><RotateCcw size={21}/></span><div><strong>Simple topic cards</strong><small>Short explanations from the topics in your uploaded material.</small></div><span className="study-online">{data.topicCards.length} TOPICS</span></div><div className="study-topic-actions"><p>We read the material in sections and explain each topic in a few easy points. Explanations stay grounded in your PDF or notes.</p><Button variant="outline" disabled={!data.notes || topicBusy} onClick={() => void generateTopicCards()}>{topicBusy ? "Making topic cards…" : data.topicCards.length ? "Refresh explanations" : "Explain every topic"} <ChevronRight size={17}/></Button></div>{topicBusy && <p className="study-topic-progress" role="status">{topicProgress}</p>}{data.topicCards.length ? <div className="study-topic-cards">{data.topicCards.map((card, index) => <article className="study-topic-card" key={card.id}><span className="eyebrow">TOPIC {index + 1}</span><h2>{card.name}</h2><ul>{card.points.map((point, pointIndex) => <li key={pointIndex}>{point}</li>)}</ul></article>)}</div> : <div className="study-empty"><RotateCcw size={28}/><h2>Turn your chapter into easy notes.</h2><p>{data.notes ? "Create one simple explanation card for each topic found in your uploaded material." : "Upload a subject or chapter PDF first, then make short, easy-to-understand topic cards from it."}</p><Button disabled={!data.notes || topicBusy} onClick={() => void generateTopicCards()}>{topicBusy ? "Making topic cards…" : "Explain every topic"} <ChevronRight size={17}/></Button></div>}</section>}
 
     {tab === "heatmap" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><Flame size={21}/></span><div><strong>Your weak-topic heatmap</strong><small>Built from answers you previously checked in Playbit.</small></div></div>{topics.length ? <div className="study-heatmap">{topics.map(([topic, score]) => { const accuracy = Math.round((score.correct / Math.max(1, score.total)) * 100); const level = accuracy < 40 ? "hot" : accuracy < 70 ? "warm" : "cool"; return <div className={`study-topic ${level}`} key={topic}><div><strong>{topic}</strong><span>{accuracy}%</span></div><div className="mastery-track"><div style={{ width: `${accuracy}%` }}/></div><small>{score.correct} correct of {score.total} · {level === "hot" ? "Review this next" : level === "warm" ? "Building confidence" : "Strong recall"}</small></div>; })}</div> : <div className="study-empty"><Flame size={28}/><h2>No checked answers yet.</h2><p>Online questions link to their original answer source; Playbit does not invent an answer key or score your response.</p><Button onClick={() => setTab("quiz")} disabled={!data.notes}>Find online questions <ChevronRight size={17}/></Button></div>}</section>}
 
-    <p className="study-note"><Lightbulb size={15}/> Your PDF stays in this browser for question search. Web questions show links to the pages they came from; answers remain on the source pages.</p>
+    <p className="study-note"><Lightbulb size={15}/> The uploaded file stays in your browser. Text sections are sent to Playbit to create simple topic explanations; online exam questions link back to their source pages.</p>
   </div>;
 }

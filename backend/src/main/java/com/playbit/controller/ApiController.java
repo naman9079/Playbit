@@ -52,5 +52,6 @@ public class ApiController {
     @PostMapping("/ai/reports/{id}") Object recommend(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id) {return ai.recommendations(user(jwt),id);}
     @PostMapping("/ai/questions/generate") Object generate(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.Start request) {return ai.candidates(user(jwt),request.subjectId());}
     @PostMapping("/study/chat") Object studyChat(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.StudyChat request) {return ai.studyChat(user(jwt),request.question(),request.context());}
+    @PostMapping("/study/topic-notes") Object studyTopicNotes(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.StudyTopicNotes request) {return ai.studyTopicNotes(user(jwt),request.title(),request.context());}
     @PostMapping("/study/online-questions") Object onlineQuestions(@Valid @RequestBody Requests.OnlineQuestionSearch request) {return onlineQuestions.search(request.query(),request.seenQuestions());}
 }
