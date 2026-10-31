@@ -105,7 +105,7 @@ All routes except health and subject catalog require `Authorization: Bearer <Sup
 
 Start body: `{"subjectId":"math","classLevel":8,"chapterId":"algebra","topicId":"exponents","difficulty":0}`. Class, chapter, and topic are optional filters; difficulty 0 is adaptive and 1/2/3 are fixed. Answer body: `{"questionId":"uuid","answer":"one of the four option strings"}`. Join: `{"code":"ABC234"}`. Recovery: `{"matchId":"uuid"}`. Hint: `{"matchId":"uuid","questionId":"uuid"}`. AI hints are available **only after match completion**. Question generation is restricted to UUIDs in `AI_ADMIN_IDS`.
 
-Matchmaking join is also its heartbeat: poll every two seconds while searching. Expired entries are removed after 20 seconds. Tolerance begins at ±150, widens by 50 per ten seconds up to 600, and must satisfy both players. Players get a three-second arrival-settle window; the matcher then prefers the closest eligible rating while preserving subject and curriculum filters. Matched queue records return the existing match on retries and are cleared at completion. A late cancellation returns the already-created match instead of silently losing a rival.
+Matchmaking join is also its heartbeat: poll every two seconds while searching. Expired entries are removed after 20 seconds. Tolerance begins at ±150, reaches ±600 within two seconds, and must satisfy both players. Players get a two-second arrival-settle window; the matcher then prefers the closest eligible rating while preserving subject and curriculum filters. Matched queue records return the existing match on retries and are cleared at completion. A late cancellation returns the already-created match instead of silently losing a rival.
 
 ## Tests
 

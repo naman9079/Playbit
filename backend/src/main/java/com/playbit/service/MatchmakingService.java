@@ -13,17 +13,16 @@ import com.playbit.repository.Db;
 public class MatchmakingService {
     private static final int INITIAL_RATING_WINDOW = 150;
     private static final int MAX_RATING_WINDOW = 600;
-    private static final int RATING_WINDOW_STEP = 50;
-    private static final int RATING_WINDOW_STEP_SECONDS = 10;
-    private static final int MATCHMAKING_SETTLE_SECONDS = 3;
+    private static final int RATING_WINDOW_RAMP_SECONDS = 2;
+    private static final int MATCHMAKING_SETTLE_SECONDS = 2;
     private final Db db; private final MatchService matches; private final Clock clock;
     public MatchmakingService(Db db,MatchService matches,Clock clock) {this.db=db;this.matches=matches;this.clock=clock;}
     private boolean sameLevel(Object stored,Integer requested) {
         return requested==null?stored==null:stored instanceof Number number && number.intValue()==requested;
     }
     private int ratingWindow(long elapsedSeconds) {
-        long steps=Math.max(0,elapsedSeconds)/RATING_WINDOW_STEP_SECONDS;
-        return (int)Math.min(MAX_RATING_WINDOW,INITIAL_RATING_WINDOW+steps*RATING_WINDOW_STEP);
+        double progress=Math.min(1.0,Math.max(0,elapsedSeconds)/(double)RATING_WINDOW_RAMP_SECONDS);
+        return (int)Math.round(INITIAL_RATING_WINDOW+(MAX_RATING_WINDOW-INITIAL_RATING_WINDOW)*progress);
     }
     @Transactional public Map<String,Object> create(UUID user,Requests.Start r) {
         matches.lock();matches.eligibleForFriend(user,r.subjectId());matches.available(user);

@@ -476,7 +476,7 @@ export default function Play() {
             </p>
             <strong className="search-time">{queueInfo.elapsed}s</strong>
             <p className="muted">
-              Match window: ±{queueInfo.tolerance ?? 150} points. It widens as you wait, and the closest eligible rival is matched first.
+              Match window: ±{queueInfo.tolerance ?? 150} points. It reaches ±600 within 2 seconds; the closest eligible rival is matched first.
             </p>
             <Button variant="outline" onClick={cancel}>
               Cancel search
