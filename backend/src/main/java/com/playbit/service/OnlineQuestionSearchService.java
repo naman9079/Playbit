@@ -69,6 +69,7 @@ public class OnlineQuestionSearchService {
         var questions = new ArrayList<Map<String,String>>();
         var sources = new ArrayList<Map<String,String>>();
         var sourceUrls = new HashSet<String>();
+        var sourceResults = new LinkedHashMap<String,JsonNode>();
         for (JsonNode result : response.path("results")) {
             int beforeSource = questions.size();
             String title = clean(result.path("title").asText("Online source"));
@@ -79,6 +80,7 @@ public class OnlineQuestionSearchService {
             if (domain == null) continue;
             String snippet = clean(result.path("content").asText(""));
             sources.add(Map.of("title", truncate(title, 180), "url", url, "domain", domain, "snippet", truncate(snippet, 500)));
+            sourceResults.put(url,result);
 
             String raw = result.path("raw_content").asText("");
             var candidates = new LinkedHashSet<String>();
@@ -92,16 +94,64 @@ public class OnlineQuestionSearchService {
             }
             if (questions.size() >= 20 || sources.size() >= 8) break;
         }
+        if (questions.isEmpty() && !sourceResults.isEmpty()) {
+            questions.addAll(extractQuestionPages(sourceResults, query, seen));
+        }
         String message = questions.isEmpty()
-            ? "No question text could be extracted from these indexed pages. Open the linked exam or textbook sources to view their original questions."
+            ? "No question text could be extracted from the search snippets or full linked pages. Some pages are scanned images or block extraction; try a more specific chapter/topic or open the original source."
             : "Questions below are excerpts found on the linked pages. Playbit has not generated or rewritten them.";
         return Map.of("query", query, "questions", questions, "sources", sources, "message", message, "source", "web");
     }
 
+    private List<Map<String,String>> extractQuestionPages(Map<String,JsonNode> sourceResults, String query, Set<String> seen) {
+        var urls = sourceResults.keySet().stream().limit(5).toList();
+        try {
+            var body = Map.of("urls",urls,"query",query,"chunks_per_source",3,"extract_depth","advanced","format","markdown");
+            var request = HttpRequest.newBuilder(URI.create("https://api.tavily.com/extract"))
+                .timeout(Duration.ofSeconds(35))
+                .header("Authorization","Bearer "+apiKey)
+                .header("Content-Type","application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
+                .build();
+            HttpResponse<String> response = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build()
+                .send(request,HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 429 || response.statusCode() == 432)
+                throw new ApiException(503,"The online question search limit has been reached while opening source pages. Try again after the search credits reset.");
+            if (response.statusCode() != 200) return List.of();
+
+            var found = new ArrayList<Map<String,String>>();
+            for (JsonNode page : mapper.readTree(response.body()).path("results")) {
+                String url = page.path("url").asText("").trim();
+                JsonNode source = sourceResults.get(url);
+                if (source == null) continue;
+                String title = clean(source.path("title").asText("Online source"));
+                String domain;
+                try { domain = URI.create(url).getHost(); } catch (Exception ex) { continue; }
+                if (domain == null) continue;
+                for (String candidate : questionLines(page.path("raw_content").asText(""))) {
+                    String normalized = canonical(candidate);
+                    if (normalized.length() < 20 || !seen.add(normalized)) continue;
+                    found.add(Map.of("question",truncate(candidate,700),"sourceTitle",truncate(title,180),"sourceUrl",url,"sourceDomain",domain));
+                    if (found.size() >= 20) return List.copyOf(found);
+                }
+            }
+            return List.copyOf(found);
+        } catch (ApiException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            return List.of();
+        }
+    }
+
     private List<String> questionLines(String sourceText) {
         if (sourceText == null || sourceText.isBlank()) return List.of();
-        String normalized = sourceText.replace("\r", "\n").replaceAll("(?i)<br\\s*/?>", "\n")
-            .replaceAll("<[^>]+>", " ").replaceAll("&nbsp;", " ").replaceAll("&amp;", "&")
+        String normalized = sourceText.replace("\r", "\n")
+            .replaceAll("(?i)<br\\s*/?>", "\n")
+            .replaceAll("(?i)</(?:p|div|li|tr|h[1-6]|section|article|blockquote|table)>|<(?:p|div|li|tr|h[1-6]|section|article|blockquote|table)(?:\\s[^>]*)?>", "\n")
+            .replaceAll("<[^>]+>", " ")
+            .replaceAll("(?i)&nbsp;|&#160;|&#xA0;", " ").replaceAll("(?i)&amp;", "&")
+            .replaceAll("(?i)&quot;|&#34;", "\"").replaceAll("(?i)&#39;|&apos;", "'")
+            .replaceAll("(?m)^\\s{0,3}#{1,6}\\s*", "")
             .replaceAll("[\\t ]+", " ");
         var found = new LinkedHashSet<String>();
         String[] lines = normalized.split("\\n+|(?<=\\?)\\s+(?=(?:(?:Q(?:uestion)?\\.?\\s*)?\\d{1,3}[.)]|What|Why|How|Which|When|Where|Define|Explain|Calculate|Solve|Find|State|Show|Prove)\\b)|(?<=\\.)\\s+(?=\\d{1,3}[.)]\\s+)");
