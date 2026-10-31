@@ -77,6 +77,9 @@ export default function Play() {
     isPending,
     error,
   } = useQuery({ queryKey: ["me"], queryFn: () => api("/me") });
+  const classSubjects = classLevel
+    ? subjects.filter((item) => Number(classLevel) >= item.minClass && Number(classLevel) <= item.maxClass)
+    : subjects;
   const curriculum = useQuery({
     queryKey: ["curriculum", subject, classLevel],
     staleTime: 5 * 60 * 1000,
@@ -203,11 +206,38 @@ export default function Play() {
           </Button>
         </div>
       )}
+      <div className="class-subject-filter panel">
+        <label>
+          Your class
+          <select
+            disabled={searching}
+            value={classLevel}
+            onChange={(e) => {
+              const nextClass=e.target.value;
+              setClassLevel(nextClass);
+              setChapter("");
+              setTopic("");
+              const nextSubjects=nextClass
+                ? subjects.filter((item) => Number(nextClass) >= item.minClass && Number(nextClass) <= item.maxClass)
+                : subjects;
+              if (!nextSubjects.some((item) => item.id === subject) && nextSubjects[0]) setSubject(nextSubjects[0].id);
+            }}
+          >
+            <option value="">Choose your class</option>
+            {Array.from({ length: 12 }, (_, index) => index + 1).map((level) => (
+              <option value={level} key={level}>Class {level}</option>
+            ))}
+          </select>
+        </label>
+        <p>{classLevel ? `Showing subjects available for Class ${classLevel}.` : "Choose a class to see the subjects and chapters for your level."}</p>
+      </div>
       <SectionTitle title="What are we playing?" eyebrow="01 / YOUR SUBJECT" />
       <div className="selection-grid subject-select">
-        {subjects.map((s) => (
+        {(classLevel ? classSubjects : []).map((s) => (
           <button
-            disabled={searching}
+            type="button"
+            disabled={searching || !classLevel}
+            aria-pressed={subject === s.id}
             onClick={() => {
               setSubject(s.id);
               setChapter("");
@@ -225,6 +255,9 @@ export default function Play() {
           </button>
         ))}
       </div>
+      {!classLevel && (
+        <p className="subject-class-prompt">Choose your class above to see the subjects available at your level.</p>
+      )}
       {!rating?.assessed && mode !== "friend" ? (
         <div className="placement panel">
           <div className="placement-symbol">✳</div>
@@ -246,7 +279,7 @@ export default function Play() {
             </div>
             <ErrorBox error={start.error} />
             <Button
-              disabled={start.isPending}
+              disabled={start.isPending || !classLevel}
               onClick={() => start.mutate(true)}
             >
               Start my placement <ArrowRight size={18} />
@@ -254,7 +287,7 @@ export default function Play() {
             <p>Joining a friend? Private duels do not require placement.</p>
             <Button
               variant="outline"
-              disabled={start.isPending}
+              disabled={start.isPending || !classLevel}
               onClick={() => setMode("friend")}
             >
               Play with a friend <Users size={18} />
@@ -300,25 +333,6 @@ export default function Play() {
                   : "5 questions · 15 seconds each · up to 120 points per answer"}
               </p>
               <div className="form-grid">
-                <label>
-                  Class
-                  <select
-                    disabled={searching}
-                    value={classLevel}
-                    onChange={(e) => {
-                      setClassLevel(e.target.value);
-                      setChapter("");
-                      setTopic("");
-                    }}
-                  >
-                    <option value="">Any class</option>
-                    {curriculum.data?.classLevels.map((level) => (
-                      <option value={level} key={level}>
-                        Class {level}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <label>
                   Chapter
                   <select
@@ -376,9 +390,9 @@ export default function Play() {
               </div>
               <ErrorBox error={curriculum.error} />
               <small className="muted">
-                Choose a class to see its combined school-maths chapter list.
-                Chapter names and order can vary between textbooks. Chapter and
-                topic filters are shared by both players in ranked duels.
+                Chapters and topics now follow the selected class and subject.
+                Exact chapter names can vary by textbook and school board. Filters
+                are shared by both players in ranked duels.
               </small>
             </div>
             <div className="start-panel">
@@ -403,7 +417,7 @@ export default function Play() {
                       : "Make mistakes, get explanations, and grow your topic mastery."}
               </p>
               <Button
-                disabled={start.isPending || searching}
+                disabled={start.isPending || searching || !classLevel}
                 onClick={() =>
                   mode === "ranked" ? setSearching(true) : start.mutate(false)
                 }

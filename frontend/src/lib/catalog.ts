@@ -1,4 +1,4 @@
-import { Calculator, BrainCircuit, ChartNoAxesCombined } from "lucide-react";
+import { Atom, BrainCircuit, Calculator, ChartNoAxesCombined, Code2, FlaskConical, Globe2, Languages, Leaf, Microscope } from "lucide-react";
 export const subjects = [
   {
     id: "math",
@@ -9,6 +9,7 @@ export const subjects = [
     icon: Calculator,
     color: "purple",
     symbol: "x²",
+    minClass: 1, maxClass: 12,
   },
   {
     id: "quant",
@@ -19,6 +20,7 @@ export const subjects = [
     icon: ChartNoAxesCombined,
     color: "cyan",
     symbol: "%",
+    minClass: 6, maxClass: 12,
   },
   {
     id: "logic",
@@ -29,6 +31,61 @@ export const subjects = [
     icon: BrainCircuit,
     color: "lime",
     symbol: "↗",
+    minClass: 6, maxClass: 12,
+  },
+  {
+    id: "evs", name: "Environmental Studies", short: "EVS",
+    description: "Explore plants, animals, health, and the world around you.",
+    topics: ["Living Things", "Water", "Earth", "Health"], icon: Leaf,
+    color: "lime", symbol: "🌿", minClass: 1, maxClass: 5,
+  },
+  {
+    id: "science", name: "Science", short: "Science",
+    description: "Build scientific thinking from everyday observations.",
+    topics: ["Life Science", "Matter", "Force", "Energy"], icon: Microscope,
+    color: "cyan", symbol: "⚛", minClass: 6, maxClass: 10,
+  },
+  {
+    id: "english", name: "English", short: "English",
+    description: "Practice grammar, vocabulary, and clear sentences.",
+    topics: ["Grammar", "Tenses", "Vocabulary", "Punctuation"], icon: Languages,
+    color: "purple", symbol: "Aa", minClass: 1, maxClass: 12,
+  },
+  {
+    id: "social", name: "Social Studies", short: "Social Studies",
+    description: "Explore history, geography, civics, and economics.",
+    topics: ["History", "Geography", "Civics", "Economics"], icon: Globe2,
+    color: "pink", symbol: "◎", minClass: 6, maxClass: 10,
+  },
+  {
+    id: "computer", name: "Computer Science", short: "Computer Science",
+    description: "Learn computing, coding, data, and online safety.",
+    topics: ["Computer Basics", "Coding", "Data", "Internet Safety"], icon: Code2,
+    color: "cyan", symbol: "</>", minClass: 6, maxClass: 12,
+  },
+  {
+    id: "physics", name: "Physics", short: "Physics",
+    description: "Use models and equations to explain the physical world.",
+    topics: ["Motion", "Forces", "Electricity", "Waves"], icon: Atom,
+    color: "purple", symbol: "F=ma", minClass: 11, maxClass: 12,
+  },
+  {
+    id: "chemistry", name: "Chemistry", short: "Chemistry",
+    description: "Understand atoms, reactions, acids, and materials.",
+    topics: ["Atoms", "Reactions", "Acids and Bases", "Bonding"], icon: FlaskConical,
+    color: "lime", symbol: "H₂O", minClass: 11, maxClass: 12,
+  },
+  {
+    id: "biology", name: "Biology", short: "Biology",
+    description: "Explore cells, living systems, and ecosystems.",
+    topics: ["Cells", "Human Body", "Plants", "Ecology"], icon: Microscope,
+    color: "lime", symbol: "DNA", minClass: 11, maxClass: 12,
+  },
+  {
+    id: "economics", name: "Economics", short: "Economics",
+    description: "Study choices, markets, money, and demand.",
+    topics: ["Markets", "Money", "Demand", "National Income"], icon: ChartNoAxesCombined,
+    color: "pink", symbol: "₹", minClass: 11, maxClass: 12,
   },
 ];
 export const subjectName = (id: string) =>

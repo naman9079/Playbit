@@ -140,7 +140,7 @@ export default function Home() {
             eyebrow="01 / FIND YOUR FOCUS"
           >
             <span className="subtle-label">
-              3 subjects. So many possibilities.
+              {subjects.length} subjects. So many possibilities.
             </span>
           </SectionTitle>
           <div className="subject-grid">

@@ -4,7 +4,7 @@ import jakarta.validation.constraints.*;
 public class Requests {
     public record Profile(@Pattern(regexp="[a-zA-Z0-9_]{3,20}") @NotBlank String username, @NotBlank @Size(max=40) String displayName,
         @Min(0) @Max(7) int avatar, @NotBlank @Pattern(regexp="English|Hindi") String language,
-        @NotBlank @Pattern(regexp="beginner|intermediate|advanced") String proficiency, @NotEmpty @Size(max=3) List<String> subjects) {}
+        @NotBlank @Pattern(regexp="beginner|intermediate|advanced") String proficiency, @NotEmpty @Size(max=12) List<String> subjects) {}
     public record Start(@NotBlank String subjectId, String topicId, @Min(0) @Max(3) int difficulty,
         @Min(1) @Max(12) Integer classLevel, String chapterId) {
         public Start(String subjectId, String topicId, int difficulty) {

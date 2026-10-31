@@ -15,6 +15,11 @@ public class CurriculumService {
     private static ChapterSpec chapter(int grade, String id, String name, String... topicIds) {
         return new ChapterSpec("c" + grade + "-" + id, name, List.of(topicIds));
     }
+    private static List<ChapterSpec> chapters(int grade, String... triples) {
+        var result=new ArrayList<ChapterSpec>();
+        for(int i=0;i+2<triples.length;i+=3) result.add(chapter(grade,triples[i],triples[i+1],triples[i+2]));
+        return List.copyOf(result);
+    }
 
     private static final List<Integer> CLASS_LEVELS = java.util.stream.IntStream.rangeClosed(1, 12).boxed().toList();
     private static final Map<Integer, List<ChapterSpec>> MATH_CHAPTERS = Map.ofEntries(
@@ -193,6 +198,71 @@ public class CurriculumService {
         ))
     );
 
+    private static final Map<Integer,List<ChapterSpec>> EVS_CHAPTERS = Map.ofEntries(
+        Map.entry(1,chapters(1,"living","Plants and Animals Around Us","evs-living","water","Water We Use","evs-water","safe","Keeping Safe and Healthy","evs-health")),
+        Map.entry(2,chapters(2,"living","Living Things and Their Needs","evs-living","water","Water and Weather","evs-water","places","Our Home and Neighbourhood","evs-earth")),
+        Map.entry(3,chapters(3,"plants","Plants Around Us","evs-living","animals","Animals and Their Homes","evs-living","water","Water in Daily Life","evs-water","health","Food and Health","evs-health")),
+        Map.entry(4,chapters(4,"habitats","Habitats and Adaptations","evs-living","water-cycle","Water Around Us","evs-water","earth","Our Environment","evs-earth","health","Health and Hygiene","evs-health")),
+        Map.entry(5,chapters(5,"ecosystems","Living Things and Habitats","evs-living","resources","Water and Natural Resources","evs-water","environment","Protecting Our Environment","evs-earth","health","Food, Health and Safety","evs-health"))
+    );
+    private static final Map<Integer,List<ChapterSpec>> ENGLISH_CHAPTERS = Map.ofEntries(
+        Map.entry(1,chapters(1,"words","Words and Naming","english-vocabulary","sentences","Building Sentences","english-sentences","sounds","Sounds and Spelling","english-grammar")),
+        Map.entry(2,chapters(2,"nouns","Naming Words","english-grammar","verbs","Action Words","english-tenses","sentences","Sentences and Questions","english-sentences")),
+        Map.entry(3,chapters(3,"grammar","Nouns, Verbs and Adjectives","english-grammar","tenses","Present and Past Actions","english-tenses","vocabulary","Word Meaning","english-vocabulary","punctuation","Capital Letters and Punctuation","english-punctuation")),
+        Map.entry(4,chapters(4,"grammar","Parts of Speech","english-grammar","tenses","Tenses and Verbs","english-tenses","sentences","Sentence Types","english-sentences","vocabulary","Synonyms and Antonyms","english-vocabulary")),
+        Map.entry(5,chapters(5,"grammar","Grammar in Context","english-grammar","tenses","Verb Tenses","english-tenses","sentences","Sentence Structure","english-sentences","punctuation","Punctuation and Editing","english-punctuation")),
+        Map.entry(6,chapters(6,"grammar","Parts of Speech","english-grammar","tenses","Tenses and Subject–Verb Agreement","english-tenses","vocabulary","Vocabulary in Context","english-vocabulary","writing","Sentence Structure and Punctuation","english-sentences","english-punctuation")),
+        Map.entry(7,chapters(7,"grammar","Grammar and Usage","english-grammar","tenses","Verbs and Tenses","english-tenses","vocabulary","Word Choice and Meaning","english-vocabulary","writing","Sentence Construction","english-sentences")),
+        Map.entry(8,chapters(8,"grammar","Grammar and Clauses","english-grammar","tenses","Tenses and Modals","english-tenses","vocabulary","Vocabulary and Context","english-vocabulary","writing","Sentence Editing and Punctuation","english-punctuation")),
+        Map.entry(9,chapters(9,"grammar","Grammar and Usage","english-grammar","tenses","Tenses and Agreement","english-tenses","vocabulary","Vocabulary and Meaning","english-vocabulary","writing","Sentence Transformation","english-sentences")),
+        Map.entry(10,chapters(10,"grammar","Grammar and Editing","english-grammar","tenses","Tenses and Modals","english-tenses","vocabulary","Vocabulary in Context","english-vocabulary","writing","Sentence Structure and Punctuation","english-punctuation")),
+        Map.entry(11,chapters(11,"grammar","Advanced Grammar and Usage","english-grammar","tenses","Verb Forms and Tenses","english-tenses","vocabulary","Academic Vocabulary","english-vocabulary","writing","Sentence Clarity and Editing","english-sentences")),
+        Map.entry(12,chapters(12,"grammar","Advanced Grammar and Usage","english-grammar","tenses","Verb Forms and Tenses","english-tenses","vocabulary","Academic Vocabulary","english-vocabulary","writing","Sentence Clarity and Editing","english-sentences"))
+    );
+    private static final Map<Integer,List<ChapterSpec>> SCIENCE_CHAPTERS = Map.ofEntries(
+        Map.entry(6,chapters(6,"living","Living Things and Their Needs","science-life","materials","Materials Around Us","science-matter","motion","Motion and Measurement","science-force","energy","Light and Energy","science-energy")),
+        Map.entry(7,chapters(7,"nutrition","Nutrition and Life Processes","science-life","matter","Heat and Changes in Materials","science-matter","motion","Motion and Time","science-force","light","Light and Its Behaviour","science-energy")),
+        Map.entry(8,chapters(8,"cells","Cells and Microorganisms","science-life","materials","Materials and Changes","science-matter","force","Force and Pressure","science-force","sound","Sound and Light","science-energy","environment","Conservation of the Environment","science-environment")),
+        Map.entry(9,chapters(9,"matter","Matter and Its Structure","science-matter","cells","Cells and Tissues","science-life","motion","Motion and Laws","science-force","energy","Work and Energy","science-energy","environment","Our Environment","science-environment")),
+        Map.entry(10,chapters(10,"reactions","Chemical Reactions and Materials","science-matter","life","Life Processes","science-life","light","Light and Vision","science-energy","electricity","Electricity and Circuits","science-electricity","environment","Environment and Sustainability","science-environment"))
+    );
+    private static final Map<Integer,List<ChapterSpec>> SOCIAL_CHAPTERS = Map.ofEntries(
+        Map.entry(6,chapters(6,"history","Early Societies and Civilisations","social-history","maps","Maps and the Earth","social-geography","community","Community and Government","social-civics","needs","Needs and Resources","social-economics")),
+        Map.entry(7,chapters(7,"history","Medieval Societies","social-history","environment","Environment and Settlements","social-geography","government","Democracy and Government","social-civics","economy","Livelihoods and the Economy","social-economics")),
+        Map.entry(8,chapters(8,"history","Societies and Change","social-history","resources","Resources and Development","social-geography","constitution","The Constitution and Rights","social-civics","markets","Markets and Production","social-economics")),
+        Map.entry(9,chapters(9,"history","Modern History and Change","social-history","climate","Climate and Physical Geography","social-geography","democracy","Democracy and Institutions","social-civics","economy","People and the Economy","social-economics")),
+        Map.entry(10,chapters(10,"history","Nationalism and the Modern World","social-history","development","Resources and Development","social-geography","institutions","Power Sharing and Institutions","social-civics","markets","Economic Development","social-economics"))
+    );
+    private static final Map<Integer,List<ChapterSpec>> COMPUTER_CHAPTERS = Map.ofEntries(
+        Map.entry(6,chapters(6,"hardware","Computer Parts and Uses","computer-basics","data","Files and Data","computer-data","coding","Step-by-Step Instructions","computer-coding","safety","Staying Safe Online","computer-safety")),
+        Map.entry(7,chapters(7,"hardware","Hardware and Software","computer-basics","data","Representing Information","computer-data","coding","Algorithms and Sequences","computer-coding","safety","Digital Citizenship","computer-safety")),
+        Map.entry(8,chapters(8,"systems","Computer Systems","computer-basics","networks","Networks and the Internet","computer-data","coding","Variables and Algorithms","computer-coding","safety","Privacy and Security","computer-safety")),
+        Map.entry(9,chapters(9,"systems","Computer Systems and Data","computer-basics","networks","Networks and the Internet","computer-data","coding","Programming Logic","computer-coding","safety","Cyber Safety","computer-safety")),
+        Map.entry(10,chapters(10,"systems","Computer Systems and Data","computer-basics","networks","Networks and the Internet","computer-data","coding","Algorithms and Programming","computer-coding","safety","Cybersecurity and Ethics","computer-safety")),
+        Map.entry(11,chapters(11,"systems","Computer Systems","computer-basics","data","Data Representation","computer-data","coding","Programming and Algorithms","computer-coding","safety","Networks and Cyber Safety","computer-safety")),
+        Map.entry(12,chapters(12,"systems","Computer Systems","computer-basics","data","Data and Networks","computer-data","coding","Programming and Algorithms","computer-coding","safety","Cybersecurity and Ethics","computer-safety"))
+    );
+    private static final Map<Integer,List<ChapterSpec>> PHYSICS_CHAPTERS = Map.ofEntries(
+        Map.entry(11,chapters(11,"motion","Kinematics and Motion","physics-motion","forces","Laws of Motion","physics-motion","energy","Work, Energy and Power","physics-energy","waves","Waves and Oscillations","physics-waves")),
+        Map.entry(12,chapters(12,"electricity","Electric Charges and Current","physics-electricity","magnetism","Magnetism and Induction","physics-electricity","optics","Ray and Wave Optics","physics-waves","modern","Modern Physics","physics-energy"))
+    );
+    private static final Map<Integer,List<ChapterSpec>> CHEMISTRY_CHAPTERS = Map.ofEntries(
+        Map.entry(11,chapters(11,"atoms","Atomic Structure and Periodicity","chemistry-atoms","bonding","Chemical Bonding","chemistry-bonding","reactions","Chemical Reactions","chemistry-reactions","equilibrium","Equilibrium and Acids","chemistry-acids")),
+        Map.entry(12,chapters(12,"solutions","Solutions and Materials","chemistry-bonding","kinetics","Chemical Kinetics","chemistry-reactions","acids","Acids, Bases and Electrochemistry","chemistry-acids","organic","Organic Chemistry","chemistry-bonding"))
+    );
+    private static final Map<Integer,List<ChapterSpec>> BIOLOGY_CHAPTERS = Map.ofEntries(
+        Map.entry(11,chapters(11,"cells","Cell Structure and Function","biology-cells","plants","Plant Physiology","biology-plants","body","Human Physiology","biology-body","ecology","Ecology","biology-ecology")),
+        Map.entry(12,chapters(12,"genetics","Genetics and Evolution","biology-cells","reproduction","Reproduction","biology-body","health","Human Health","biology-body","ecology","Ecology and Environment","biology-ecology"))
+    );
+    private static final Map<Integer,List<ChapterSpec>> ECONOMICS_CHAPTERS = Map.ofEntries(
+        Map.entry(11,chapters(11,"markets","Markets and Choices","economics-markets","demand","Demand and Supply","economics-demand","money","Money and Banking","economics-money","income","Measuring National Income","economics-income")),
+        Map.entry(12,chapters(12,"markets","Market Forms and Choices","economics-markets","demand","Demand and Supply","economics-demand","money","Money and Banking","economics-money","income","National Income and the Economy","economics-income"))
+    );
+    private static final Map<String,Map<Integer,List<ChapterSpec>>> SCHOOL_CHAPTERS = Map.ofEntries(
+        Map.entry("evs",EVS_CHAPTERS),Map.entry("english",ENGLISH_CHAPTERS),Map.entry("science",SCIENCE_CHAPTERS),
+        Map.entry("social",SOCIAL_CHAPTERS),Map.entry("computer",COMPUTER_CHAPTERS),Map.entry("physics",PHYSICS_CHAPTERS),
+        Map.entry("chemistry",CHEMISTRY_CHAPTERS),Map.entry("biology",BIOLOGY_CHAPTERS),Map.entry("economics",ECONOMICS_CHAPTERS)
+    );
     private static final Map<String, List<ChapterSpec>> OTHER_CHAPTERS = Map.of(
         "quant", List.of(
             new ChapterSpec("business-math", "Percentages and Profit or Loss", List.of("percentages", "profit-loss")),
@@ -216,21 +286,29 @@ public class CurriculumService {
         List<ChapterSpec> specs;
         if (subject.equals("math"))
             specs = classLevel == null ? MATH_CHAPTERS.values().stream().flatMap(List::stream).toList() : MATH_CHAPTERS.get(classLevel);
-        else specs = OTHER_CHAPTERS.get(subject);
+        else if (SCHOOL_CHAPTERS.containsKey(subject)) {
+            var byClass=SCHOOL_CHAPTERS.get(subject);
+            specs=classLevel==null?byClass.values().stream().flatMap(List::stream).toList():byClass.get(classLevel);
+        } else specs = OTHER_CHAPTERS.get(subject);
         if (specs == null || names.isEmpty()) throw new ApiException(404, "Subject not found");
         var chapters = specs.stream().map(chapter -> new Chapter(
             chapter.id(), chapter.name(), chapter.topicIds().stream()
                 .filter(names::containsKey)
                 .map(id -> new Topic(id, names.get(id))).toList()
         )).filter(chapter -> !chapter.topics().isEmpty()).toList();
-        return new Catalog(CLASS_LEVELS, chapters);
+        var levels=subject.equals("math")?CLASS_LEVELS
+            :SCHOOL_CHAPTERS.containsKey(subject)?SCHOOL_CHAPTERS.get(subject).keySet().stream().sorted().toList()
+            :List.of(6,7,8,9,10,11,12);
+        return new Catalog(levels, chapters);
     }
 
     public String chapterName(String subject, Integer classLevel, String chapterId) {
         if (chapterId == null) return null;
         var specs = subject.equals("math")
             ? (classLevel == null ? MATH_CHAPTERS.values().stream().flatMap(List::stream).toList() : MATH_CHAPTERS.getOrDefault(classLevel, List.of()))
-            : OTHER_CHAPTERS.getOrDefault(subject, List.of());
+            : SCHOOL_CHAPTERS.containsKey(subject)
+                ? (classLevel == null ? SCHOOL_CHAPTERS.get(subject).values().stream().flatMap(List::stream).toList() : SCHOOL_CHAPTERS.get(subject).getOrDefault(classLevel,List.of()))
+                : OTHER_CHAPTERS.getOrDefault(subject, List.of());
         return specs.stream().filter(chapter -> chapter.id().equals(chapterId))
             .map(ChapterSpec::name).findFirst().orElse(null);
     }
