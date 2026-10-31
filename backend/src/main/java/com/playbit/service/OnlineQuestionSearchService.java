@@ -38,7 +38,7 @@ public class OnlineQuestionSearchService {
                 "search_depth", "basic",
                 "topic", "general",
                 "max_results", 8,
-                "include_raw_content", true,
+                "include_raw_content", false,
                 "include_answer", false,
                 "include_images", false,
                 "safe_search", true,
@@ -106,9 +106,9 @@ public class OnlineQuestionSearchService {
     private List<Map<String,String>> extractQuestionPages(Map<String,JsonNode> sourceResults, String query, Set<String> seen) {
         var urls = sourceResults.keySet().stream().limit(5).toList();
         try {
-            var body = Map.of("urls",urls,"query",query,"chunks_per_source",3,"extract_depth","advanced","format","markdown");
+            var body = Map.of("urls",urls.stream().limit(3).toList(),"query",query,"chunks_per_source",2,"extract_depth","basic","format","markdown");
             var request = HttpRequest.newBuilder(URI.create("https://api.tavily.com/extract"))
-                .timeout(Duration.ofSeconds(35))
+                .timeout(Duration.ofSeconds(18))
                 .header("Authorization","Bearer "+apiKey)
                 .header("Content-Type","application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))

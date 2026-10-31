@@ -186,11 +186,16 @@ export default function Study() {
     setData((current) => ({ ...current, topicCards: [] }));
     let summaryCount = 0;
     try {
-      for (let index = 0; index < chunks.length; index += 2) {
-        const batch = chunks.slice(index, index + 2);
+      const batchSize = 4;
+      let lastFailure: unknown;
+      for (let index = 0; index < chunks.length; index += batchSize) {
+        const batch = chunks.slice(index, index + batchSize);
         setTopicProgress(`Explaining sections ${index + 1}–${index + batch.length} of ${chunks.length}…`);
-        const results = await Promise.all(batch.map((context) => api<{ topics: { name: string; points: string[] }[] }>("/study/topic-notes", "POST", { title: data.title || "Uploaded study material", context })));
-        const found = results.flatMap((result) => result.topics ?? []).filter((topic) => topic.name && topic.points?.length);
+        const results = await Promise.allSettled(batch.map((context) => api<{ topics: { name: string; points: string[] }[] }>("/study/topic-notes", "POST", { title: data.title || "Uploaded study material", context })));
+        const found = results.flatMap((result) => {
+          if (result.status === "rejected") { lastFailure = result.reason; return []; }
+          return result.value.topics ?? [];
+        }).filter((topic) => topic.name && topic.points?.length);
         summaryCount += found.length;
         setData((previous) => {
           const byTopic = new Map(previous.topicCards.map((topic) => [topicKey(topic.name), topic]));
@@ -203,7 +208,10 @@ export default function Study() {
           return { ...previous, topicCards: [...byTopic.values()] };
         });
       }
-      if (!summaryCount) throw new Error("No clear topics could be found in this text. Check that the PDF has selectable text, then try again.");
+      if (!summaryCount) {
+        if (lastFailure instanceof Error) throw lastFailure;
+        throw new Error("No clear topics could be found in this text. Check that the PDF has selectable text, then try again.");
+      }
       setTopicProgress("");
       setTab("cards");
     } catch (error) {
