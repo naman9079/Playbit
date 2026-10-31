@@ -11,6 +11,7 @@ import com.playbit.repository.Db;
 
 @Service
 public class MatchmakingService {
+    private static final int RATING_WINDOW = 150;
     private final Db db; private final MatchService matches; private final Clock clock;
     public MatchmakingService(Db db,MatchService matches,Clock clock) {this.db=db;this.matches=matches;this.clock=clock;}
     private boolean sameLevel(Object stored,Integer requested) {
@@ -67,17 +68,16 @@ public class MatchmakingService {
             || !Objects.equals(existing.getFirst().get("topic_id"),request.topicId()))
             throw new ApiException(409,"Cancel your current search before changing its class, chapter, or topic");
         db.run("update matchmaking_queue set heartbeat_at=? where user_id=?",Timestamp.from(now),user);
-        var own=db.one("select * from matchmaking_queue where user_id=?",user);long elapsed=Duration.between(MatchService.instant(own.get("joined_at")),now).toSeconds();int tolerance=(int)Math.min(600,150+50*(elapsed/10));
-        for(var candidate:db.rows("select * from matchmaking_queue where subject_id=? and user_id<>? and match_id is null and class_level is not distinct from cast(? as smallint) and chapter_id is not distinct from cast(? as varchar(40)) and topic_id is not distinct from cast(? as varchar(40)) order by joined_at",subject,user,request.classLevel(),request.chapterId(),request.topicId())) {
-            long otherWait=Duration.between(MatchService.instant(candidate.get("joined_at")),now).toSeconds();int otherTolerance=(int)Math.min(600,150+50*(otherWait/10));
-            if(Math.abs(Db.integer(candidate,"rating")-rating)>Math.min(tolerance,otherTolerance)) continue;
+        var own=db.one("select * from matchmaking_queue where user_id=?",user);long elapsed=Duration.between(MatchService.instant(own.get("joined_at")),now).toSeconds();
+        for(var candidate:db.rows("select * from matchmaking_queue where subject_id=? and user_id<>? and match_id is null and class_level is not distinct from cast(? as smallint) and chapter_id is not distinct from cast(? as varchar(40)) and topic_id is not distinct from cast(? as varchar(40)) and rating between ? and ? order by joined_at",subject,user,request.classLevel(),request.chapterId(),request.topicId(),rating-RATING_WINDOW,rating+RATING_WINDOW)) {
+            if(Math.abs(Db.integer(candidate,"rating")-rating)>RATING_WINDOW) continue;
             UUID other=UUID.fromString(Db.str(candidate,"user_id"));
             if(db.count("select count(*) from match_players p join matches m on m.id=p.match_id where p.user_id=? and m.status in ('active','waiting')",other)>0) continue;
             int avg=(rating+Db.integer(candidate,"rating"))/2;UUID id=matches.create(user,subject,request.classLevel(),request.chapterId(),request.topicId(),avg<900?1:avg>=1200?3:2,"ranked",null,5);
             matches.addPlayer(id,other,subject); matches.activate(id);
             db.run("update matchmaking_queue set match_id=? where user_id=? or user_id=?",id,user,other);return Map.of("matchId",id);
         }
-        return Map.of("status","searching","elapsed",elapsed,"tolerance",tolerance,"rating",rating);
+        return Map.of("status","searching","elapsed",elapsed,"tolerance",RATING_WINDOW,"rating",rating);
     }
     @Transactional public Map<String,Object> cancel(UUID user) {
         matches.lock();var existing=db.rows("select match_id from matchmaking_queue where user_id=?",user);

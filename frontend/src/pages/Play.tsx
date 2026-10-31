@@ -476,7 +476,7 @@ export default function Play() {
             </p>
             <strong className="search-time">{queueInfo.elapsed}s</strong>
             <p className="muted">
-              Searching within ±{queueInfo.tolerance || 150} rating points
+              Strict match window: ±{queueInfo.tolerance ?? 150} rating points. It will not widen.
             </p>
             <Button variant="outline" onClick={cancel}>
               Cancel search
