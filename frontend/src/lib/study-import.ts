@@ -87,7 +87,7 @@ export async function extractStudyFile(file: File): Promise<string> {
   if (ext === "rtf") return text.replace(/\\'[0-9a-f]{2}/gi, " ").replace(/\\[a-z]+-?\d* ?/gi, " ").replace(/[{}]/g, " ").replace(/\s+/g, " ");
   const binary = (text.match(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffd]/g) ?? []).length;
   if (binary > Math.max(2, text.length * 0.01)) {
-    throw new Error(`“${file.name}” is a binary format Playbit cannot extract yet. Export it as PDF, DOCX, PPTX, XLSX, ODT, ODS, ODP, EPUB, or text and retry.`);
+    throw new Error(`“${file.name}” is not a readable text document. Upload PDF, DOCX, PPTX, XLSX, ODT, ODS, ODP, EPUB, TXT, CSV, Markdown, or a PNG/JPG/WebP screenshot.`);
   }
   if (["html", "htm", "xml"].includes(ext)) {
     const container = document.createElement("div");

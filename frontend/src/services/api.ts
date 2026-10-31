@@ -57,3 +57,25 @@ export async function api<T = Record<string, any>>(
   }
   return response.json();
 }
+
+export async function uploadStudyImage<T = Record<string, any>>(file: File): Promise<T> {
+  if (!apiBaseUrl) throw new Error("The Playbit API is not configured.");
+  const session = (await supabase?.auth.getSession())?.data.session;
+  const form = new FormData();
+  form.append("file", file);
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/study/extract-image`, {
+      method: "POST",
+      headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+      body: form,
+    });
+  } catch {
+    throw new Error("The Playbit server could not be reached. Check your connection and try again.");
+  }
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || `Image upload failed (${response.status}).`);
+  }
+  return response.json();
+}

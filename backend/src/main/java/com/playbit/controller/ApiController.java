@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import com.playbit.dto.Requests;
 import com.playbit.repository.*;
 import com.playbit.service.*;
@@ -52,6 +53,7 @@ public class ApiController {
     @PostMapping("/ai/reports/{id}") Object recommend(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID id) {return ai.recommendations(user(jwt),id);}
     @PostMapping("/ai/questions/generate") Object generate(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.Start request) {return ai.candidates(user(jwt),request.subjectId());}
     @PostMapping("/study/chat") Object studyChat(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.StudyChat request) {return ai.studyChat(user(jwt),request.question(),request.context());}
+    @PostMapping(value="/study/extract-image",consumes="multipart/form-data") Object extractStudyImage(@AuthenticationPrincipal Jwt jwt,@RequestPart("file") MultipartFile file) {return ai.extractStudyImage(user(jwt),file);}
     @PostMapping("/study/topic-notes") Object studyTopicNotes(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody Requests.StudyTopicNotes request) {return ai.studyTopicNotes(user(jwt),request.title(),request.context());}
     @PostMapping("/study/online-questions") Object onlineQuestions(@Valid @RequestBody Requests.OnlineQuestionSearch request) {return onlineQuestions.search(request.query(),request.seenQuestions());}
 }
