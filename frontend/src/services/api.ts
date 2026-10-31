@@ -20,22 +20,32 @@ export async function api<T = Record<string, any>>(
     );
   }
   const session = (await supabase?.auth.getSession())?.data.session;
-  const response = await fetch(
-    `${apiBaseUrl}${path}`,
-    {
-      method,
-      cache: method === "GET" ? "no-store" : undefined,
-      headers: {
-        "Content-Type": "application/json",
-        ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
+  const request: RequestInit = {
+    method,
+    cache: method === "GET" ? "no-store" : undefined,
+    headers: {
+      "Content-Type": "application/json",
+      ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
     },
-  ).catch(() => {
-    throw new Error(
-      "Cannot reach the Playbit API. Check VITE_API_BASE_URL in Vercel and confirm the backend allows this site in CORS_ORIGINS.",
-    );
-  });
+    body: body === undefined ? undefined : JSON.stringify(body),
+  };
+  // Matchmaking join is an idempotent queue poll; a lost response can safely be retried.
+  const canRetry = method === "GET" || path === "/matchmaking/join";
+  let response: Response | undefined;
+  for (let attempt = 0; attempt < (canRetry ? 3 : 1); attempt++) {
+    try {
+      response = await fetch(`${apiBaseUrl}${path}`, request);
+      break;
+    } catch {
+      if (!canRetry || attempt === 2) {
+        throw new Error(
+          "The Playbit server could not be reached. Check your internet connection and retry; if it keeps happening, the backend may be waking up or restarting.",
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)));
+    }
+  }
+  if (!response) throw new Error("The Playbit server did not respond. Please retry.");
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(
