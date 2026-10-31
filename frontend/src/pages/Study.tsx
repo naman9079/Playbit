@@ -162,11 +162,12 @@ export default function Study() {
     event.preventDefault();
     const trimmed = question.trim();
     if (!trimmed || busy) return;
+    const history = data.messages.slice(-12).map((message) => `${message.role === "user" ? "Student" : "Tutor"}: ${message.text}`).join("\n").slice(-8000);
     const userMessage: ChatMessage = { role: "user", text: trimmed };
     setData((current) => ({ ...current, messages: [...current.messages, userMessage] }));
     setQuestion(""); setBusy(true); setChatError("");
     try {
-      const result = await api<{ answer: string; hint?: string }>("/study/chat", "POST", { question: trimmed, context: data.notes.slice(0, 24_000) });
+      const result = await api<{ answer: string; hint?: string }>("/study/chat", "POST", { question: trimmed, context: data.notes.slice(0, 24_000), history });
       setData((current) => ({ ...current, messages: [...current.messages, { role: "assistant", text: result.answer, hint: result.hint }] }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "The tutor couldn't answer just now.";
@@ -270,7 +271,7 @@ export default function Study() {
     <div className="page-heading study-heading">
       <span className="eyebrow">YOUR AI STUDY COMPANION</span>
       <h1>Study with Playbit</h1>
-      <p>Ask questions about your material, then turn what you learn into practice.</p>
+      <p>Ask any question across your subjects. Add notes or a file when you want the tutor to use them as context.</p>
     </div>
 
     <div className="study-tabs" role="tablist" aria-label="Study tools">
@@ -280,12 +281,12 @@ export default function Study() {
     {chatError && <div className="study-error" role="alert"><XCircle size={18}/>{chatError}<button aria-label="Dismiss" onClick={() => setChatError("")}><XCircle size={15}/></button></div>}
 
     {tab === "chat" && <section className="study-chat study-chat-workspace panel">
-      <div className="study-panel-title"><span className="study-icon"><Bot size={21}/></span><div><strong>Playbit study tutor</strong><small>Ask about your notes or request a simple explanation</small></div><span className="study-online"><i/> READY</span></div>
+      <div className="study-panel-title"><span className="study-icon"><Bot size={21}/></span><div><strong>Playbit study tutor</strong><small>Ask any question. Your notes are optional.</small></div><span className="study-online"><i/> READY</span></div>
       {data.notes && <div className="study-material-chip"><span className="study-material-icon"><BookOpenText size={16}/></span><span><strong>{data.title || "Study material"}</strong><small>{data.notes.length.toLocaleString()} characters added to this chat</small></span><button type="button" onClick={clearStudyMaterial} aria-label="Remove study material"><X size={16}/></button></div>}
       <div className="study-messages" ref={scrollRef}>
-        {!data.messages.length && <div className="study-welcome"><Sparkles size={24}/><h2>What are you studying today?</h2><p>Add a PDF, document, screenshot, or paste notes. Then ask for a clear explanation or a hint.</p><div>{["Explain the main idea", "Give me a hint", "What should I remember?"] .map((suggestion) => <button key={suggestion} disabled={!data.notes} onClick={() => setQuestion(suggestion)}>{suggestion}<ChevronRight size={14}/></button>)}</div></div>}
+        {!data.messages.length && <div className="study-welcome"><Sparkles size={24}/><h2>What would you like to know?</h2><p>Ask about a subject, a homework problem, or an idea you want explained. Upload notes only when you want the tutor to refer to them.</p><div>{["Explain a hard topic simply", "Help me solve a problem step by step", "Why does the Moon change shape?"] .map((suggestion) => <button key={suggestion} onClick={() => setQuestion(suggestion)}>{suggestion}<ChevronRight size={14}/></button>)}</div></div>}
         {data.messages.map((message, index) => <div className={`study-message ${message.role}`} key={`${index}-${message.text.slice(0, 12)}`}><span className="study-avatar">{message.role === "assistant" ? <Bot size={16}/> : "YOU"}</span><div><p>{message.text}</p>{message.hint && <aside><Lightbulb size={15}/><span><strong>Think about it</strong>{message.hint}</span></aside>}</div></div>)}
-        {busy && <div className="study-message assistant"><span className="study-avatar"><Bot size={16}/></span><div className="study-thinking">Thinking from your notes…</div></div>}
+        {busy && <div className="study-message assistant"><span className="study-avatar"><Bot size={16}/></span><div className="study-thinking">Thinking through your question…</div></div>}
       </div>
       {showNotesEditor && <div className="study-paste-editor"><textarea aria-label="Paste notes or syllabus" value={notesDraft} maxLength={120_000} onChange={(event) => setNotesDraft(event.target.value)} placeholder="Paste your notes or syllabus here…"/><div><small>{notesDraft.length.toLocaleString()} characters</small><Button type="button" variant="outline" onClick={() => setShowNotesEditor(false)}>Cancel</Button><Button type="button" onClick={savePastedNotes}>Add notes</Button></div></div>}
       <div className="study-composer-wrap">
@@ -293,12 +294,12 @@ export default function Study() {
         <input ref={fileRef} hidden type="file" accept="*/*" onChange={(event) => { void importFile(event.target.files?.[0]); event.currentTarget.value = ""; }}/>
         <form className="study-composer" onSubmit={(event) => void sendMessage(event)}>
           <button type="button" className="study-plus-button" aria-label="Add study material" aria-haspopup="menu" aria-expanded={attachMenuOpen} disabled={Boolean(fileStatus)} onClick={() => setAttachMenuOpen((open) => !open)}><Plus size={22}/></button>
-          <input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={data.notes ? "Ask anything about your material…" : "Add a file or notes to start your study chat"} disabled={!data.notes || busy}/>
-          <Button type="submit" disabled={!question.trim() || !data.notes || busy} aria-label="Send question"><Send size={17}/></Button>
+          <input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={data.notes ? "Ask any question, or ask about your material…" : "Ask any question…"} disabled={busy}/>
+          <Button type="submit" disabled={!question.trim() || busy} aria-label="Send question"><Send size={17}/></Button>
         </form>
       </div>
       {fileStatus && <small className="study-upload-status" role="status">{fileStatus}</small>}
-      <small className="study-privacy"><FileText size={13}/> Uploads stay in this browser; extracted text is sent to Playbit’s backend for study help. Images are read by Gemini.</small>
+      <small className="study-privacy"><FileText size={13}/> Questions and optional study notes are sent to Playbit’s backend and Google Gemini for answers. Uploaded files stay in this browser.</small>
     </section>}
 
     {tab === "quiz" && <section className="panel study-tool-panel"><div className="study-panel-title"><span className="study-icon"><Brain size={21}/></span><div><strong>Questions from the web</strong><small>Exact question excerpts from public pages, with source links.</small></div></div><p className="study-search-note">Playbit searches existing exam and textbook pages. It does not generate or rewrite questions from your PDF.</p><form className="study-online-search" onSubmit={(event) => { event.preventDefault(); void searchOnlineQuestions(); }}><input aria-label="Chapter or topic to search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Chapter or topic, for example Class 8 · Linear Equations" maxLength={180}/><Button type="submit" disabled={!data.notes || !searchQuery.trim() || quizBusy}>{quizBusy ? "Searching the web…" : "Find questions"} <ChevronRight size={16}/></Button></form>{quiz ? <div className="study-question"><span className="eyebrow">FOUND ON {quiz.sourceDomain}</span><h2>{quiz.question}</h2><p className="study-question-source">Source: <a href={quiz.sourceUrl} target="_blank" rel="noreferrer">{quiz.sourceTitle}</a></p><p className="study-search-note">This is question text found on the linked page. Open it for the original context, answer key, and exam instructions.</p><Button variant="outline" disabled={quizBusy} onClick={() => void nextQuiz()}>{quizBusy ? "Searching the web…" : "Next question"} <ChevronRight size={16}/></Button></div> : <><div className="study-empty"><Brain size={28}/><h2>Find questions from your chapter.</h2><p>{data.onlineMessage || "Upload a chapter PDF, check the detected topic, and search for questions already published online."}</p><Button onClick={() => void searchOnlineQuestions()} disabled={!data.notes || quizBusy || !searchQuery.trim()}>{quizBusy ? "Searching the web…" : "Search online questions"} <ChevronRight size={17}/></Button></div>{data.onlineSources.length > 0 && <div className="study-online-sources"><strong>Search results</strong>{data.onlineSources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer"><span>{source.title}</span><small>{source.domain} · {source.snippet}</small></a>)}</div>}</>}</section>}
