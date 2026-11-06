@@ -76,6 +76,8 @@ export default function Play() {
     data: me,
     isPending,
     error,
+    isFetching,
+    refetch,
   } = useQuery({ queryKey: ["me"], queryFn: () => api("/me") });
   const classSubjects = classLevel
     ? subjects.filter((item) => Number(classLevel) >= item.minClass && Number(classLevel) <= item.maxClass)
@@ -170,7 +172,14 @@ export default function Play() {
     }
   }
   if (isPending) return <Loading />;
-  if (error) return <ErrorBox error={error} />;
+  if (error) return (
+    <div>
+      <ErrorBox error={error} />
+      <Button disabled={isFetching} onClick={() => void refetch()}>
+        {isFetching ? "Retrying…" : "Try again"}
+      </Button>
+    </div>
+  );
   if (!me?.onboarded)
     return (
       <div className="narrow-page panel">

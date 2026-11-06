@@ -1,4 +1,5 @@
 import { supabase } from "../lib/supabase";
+import { checkApiCooldown, responseError } from "./httpErrors";
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
 const pointsToLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(
   configuredApiBaseUrl || "",
@@ -33,6 +34,7 @@ export async function api<T = Record<string, any>>(
   const canRetry = method === "GET" || path === "/matchmaking/join";
   let response: Response | undefined;
   for (let attempt = 0; attempt < (canRetry ? 3 : 1); attempt++) {
+    checkApiCooldown();
     try {
       response = await fetch(`${apiBaseUrl}${path}`, request);
       break;
@@ -47,13 +49,7 @@ export async function api<T = Record<string, any>>(
   }
   if (!response) throw new Error("The Playbit server did not respond. Please retry.");
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(
-      error.message ||
-        (response.status === 401
-          ? "Your session has expired. Please sign in again."
-          : `Request failed (${response.status})`),
-    );
+    throw await responseError(response);
   }
   return response.json();
 }
@@ -64,6 +60,7 @@ export async function uploadStudyImage<T = Record<string, any>>(file: File): Pro
   const form = new FormData();
   form.append("file", file);
   let response: Response;
+  checkApiCooldown();
   try {
     response = await fetch(`${apiBaseUrl}/study/extract-image`, {
       method: "POST",
@@ -74,8 +71,7 @@ export async function uploadStudyImage<T = Record<string, any>>(file: File): Pro
     throw new Error("The Playbit server could not be reached. Check your connection and try again.");
   }
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.message || `Image upload failed (${response.status}).`);
+    throw await responseError(response);
   }
   return response.json();
 }

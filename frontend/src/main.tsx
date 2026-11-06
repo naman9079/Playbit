@@ -18,6 +18,7 @@ import {
 } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { supabase } from "./lib/supabase";
+import { apiRetryDelay } from "./services/httpErrors";
 import { useSession } from "./stores/session";
 import Shell from "./components/Shell";
 import { Loading } from "./components/common";
@@ -37,7 +38,7 @@ const Profile = lazy(() => import("./pages/Profile"));
 const Leaderboards = lazy(() => import("./pages/Leaderboards"));
 const client = new QueryClient({
   defaultOptions: {
-    queries: { retry: 1, staleTime: 15000 },
+    queries: { retry: 1, retryDelay: apiRetryDelay, staleTime: 15000 },
     mutations: { retry: 0 },
   },
 });
